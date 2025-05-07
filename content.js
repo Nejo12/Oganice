@@ -11,41 +11,29 @@ let isCollapsed = false;
 
 // Initialize the extension
 function initializeExtension() {
-    console.log('Initializing extension...');
     if (isInitialized) return;
-    console.log('Initializing AI Chat Topic Manager...');
-    
-    // Wait for the main chat container to be available
     const checkContainer = setInterval(() => {
         const chatContainer = document.querySelector('main') || 
-                            document.querySelector('.flex.flex-col.items-center.text-sm') ||
-                            document.querySelector('.overflow-hidden.w-full.h-full.relative.flex.z-0');
-        
+            document.querySelector('.flex.flex-col.items-center.text-sm') ||
+            document.querySelector('.overflow-hidden.w-full.h-full.relative.flex.z-0');
         if (chatContainer) {
             clearInterval(checkContainer);
-            console.log('Found chat container:', chatContainer);
             createTopicManagerUI(chatContainer);
             setupEventListeners();
             loadSavedTopics();
             isInitialized = true;
         }
-    }, 1000); // Check every second
-
-    // Set a timeout to stop checking after 10 seconds
+    }, 1000);
     setTimeout(() => {
         if (!isInitialized) {
             clearInterval(checkContainer);
-            console.error('Could not find chat container after 10 seconds');
         }
     }, 10000);
 }
 
-// Create the topic manager UI
 function createTopicManagerUI(container) {
-    console.log('Creating topic manager UI...');
     const existingContainer = document.getElementById('topic-manager-container');
     if (existingContainer) existingContainer.remove();
-
     topicManagerContainer = document.createElement('div');
     topicManagerContainer.id = 'topic-manager-container';
     topicManagerContainer.className = 'topic-manager';
@@ -54,16 +42,11 @@ function createTopicManagerUI(container) {
     topicManagerContainer.style.top = '20px';
     topicManagerContainer.style.left = 'auto';
     topicManagerContainer.style.width = '320px';
-    topicManagerContainer.style.background = '#23272f';
-    topicManagerContainer.style.border = '1.5px solid #444';
     topicManagerContainer.style.borderRadius = '10px';
-    topicManagerContainer.style.boxShadow = '0 4px 24px rgba(0,0,0,0.18)';
-    topicManagerContainer.style.zIndex = '10000';
-    topicManagerContainer.style.color = '#f3f3f3';
     topicManagerContainer.style.fontFamily = 'Inter, Arial, sans-serif';
     topicManagerContainer.style.transition = 'box-shadow 0.2s';
-
-    // Header with drag handle and collapse button
+    topicManagerContainer.style.zIndex = '10000';
+    // Header
     const header = document.createElement('div');
     header.className = 'topic-manager-header';
     header.textContent = 'Topic Manager';
@@ -76,22 +59,34 @@ function createTopicManagerUI(container) {
     header.style.alignItems = 'center';
     header.style.justifyContent = 'space-between';
     header.style.userSelect = 'none';
-
     // Collapse/expand button
     const collapseBtn = document.createElement('button');
     collapseBtn.textContent = '▲';
-    collapseBtn.style.background = 'none';
-    collapseBtn.style.border = 'none';
-    collapseBtn.style.color = '#fff';
+    collapseBtn.style.background = 'transparent !important';
+    collapseBtn.style.border = 'none !important';
+    collapseBtn.style.outline = 'none';
+    collapseBtn.style.boxShadow = 'none';
     collapseBtn.style.fontSize = '18px';
     collapseBtn.style.cursor = 'pointer';
     collapseBtn.style.marginLeft = '10px';
+    collapseBtn.onfocus = collapseBtn.onmousedown = () => { collapseBtn.style.outline = 'none'; collapseBtn.style.boxShadow = 'none'; };
     header.appendChild(collapseBtn);
-
-    // Content area (everything except header)
+    // Theme toggle button
+    const themeBtn = document.createElement('button');
+    themeBtn.textContent = getGlassTheme() === 'dark' ? '🌙' : '☀️';
+    themeBtn.title = 'Toggle light/dark glass theme';
+    themeBtn.style.background = 'transparent !important';
+    themeBtn.style.border = 'none !important';
+    themeBtn.style.outline = 'none';
+    themeBtn.style.boxShadow = 'none';
+    themeBtn.style.fontSize = '18px';
+    themeBtn.style.cursor = 'pointer';
+    themeBtn.style.marginLeft = '10px';
+    themeBtn.onfocus = themeBtn.onmousedown = () => { themeBtn.style.outline = 'none'; themeBtn.style.boxShadow = 'none'; };
+    header.appendChild(themeBtn);
+    // Content area
     const contentArea = document.createElement('div');
     contentArea.id = 'topic-manager-content';
-
     // Topic list
     topicList = document.createElement('div');
     topicList.id = 'topic-list';
@@ -100,13 +95,12 @@ function createTopicManagerUI(container) {
     topicList.style.maxHeight = '200px';
     topicList.style.overflowY = 'auto';
     topicList.style.background = 'transparent';
-
     // Input container
     const inputContainer = document.createElement('div');
     inputContainer.style.padding = '10px';
-    inputContainer.style.borderTop = '1px solid #333';
+    inputContainer.style.borderTop = '1px solid rgba(255,255,255,0.18)';
+    inputContainer.style.border = '1px solid rgba(170, 163, 149, 0.18)';
     inputContainer.style.background = 'transparent';
-
     // Topic input
     const topicInput = document.createElement('input');
     topicInput.id = 'topic-input';
@@ -116,11 +110,10 @@ function createTopicManagerUI(container) {
     topicInput.style.width = '100%';
     topicInput.style.marginBottom = '10px';
     topicInput.style.padding = '8px';
-    topicInput.style.border = '1px solid #444';
+    topicInput.style.border = '1px solid #f3f3f3';
     topicInput.style.borderRadius = '4px';
-    topicInput.style.background = '#23272f';
-    topicInput.style.color = '#f3f3f3';
-
+    topicInput.style.background = '#ced5e3';
+    topicInput.style.color = '#303030';
     // Add topic button
     const addTopicButton = document.createElement('button');
     addTopicButton.id = 'add-topic';
@@ -130,95 +123,76 @@ function createTopicManagerUI(container) {
     addTopicButton.style.padding = '8px';
     addTopicButton.style.background = '#007bff';
     addTopicButton.style.color = 'white';
-    addTopicButton.style.border = 'none';
+    addTopicButton.style.border = '1px solid #ced5e3';
     addTopicButton.style.borderRadius = '4px';
     addTopicButton.style.cursor = 'pointer';
     addTopicButton.style.fontWeight = 'bold';
     addTopicButton.style.fontSize = '15px';
     addTopicButton.style.marginTop = '2px';
-
     // Assemble content area
     contentArea.appendChild(topicList);
     contentArea.appendChild(inputContainer);
     inputContainer.appendChild(topicInput);
     inputContainer.appendChild(addTopicButton);
-
     // Add header and content to panel
     topicManagerContainer.appendChild(header);
     topicManagerContainer.appendChild(contentArea);
     container.appendChild(topicManagerContainer);
-
     // Make draggable
     makePanelDraggable(topicManagerContainer, header);
     // Collapse/expand
     collapseBtn.onclick = () => togglePanelCollapse(topicManagerContainer, contentArea, collapseBtn);
-    // Start expanded
+    // Theme toggle
+    themeBtn.onclick = () => {
+        const newTheme = getGlassTheme() === 'dark' ? 'light' : 'dark';
+        setGlassTheme(newTheme);
+        themeBtn.textContent = newTheme === 'dark' ? '🌙' : '☀️';
+    };
     isCollapsed = false;
+    applyGlassTheme(getGlassTheme());
 }
 
-// Setup event listeners
 function setupEventListeners() {
-    console.log('Setting up event listeners...');
-    
-    // Wait for the elements to be available
     const checkElements = setInterval(() => {
         const addTopicButton = document.getElementById('add-topic');
         const topicInput = document.getElementById('topic-input');
-        
         if (addTopicButton && topicInput) {
             clearInterval(checkElements);
-            console.log('Found add topic button and input');
-            
             addTopicButton.addEventListener('click', () => {
                 const topicName = topicInput.value.trim();
                 if (topicName) {
-                    console.log('Adding new topic:', topicName);
                     addTopic(topicName);
                     topicInput.value = '';
                 }
             });
-            
-            // Listen for new messages
             setupMessageObserver();
-        } else {
-            console.log('Waiting for add topic button and input...');
         }
     }, 1000);
 }
 
 function setupMessageObserver() {
     const chatContainer = document.querySelector('main') || 
-                         document.querySelector('.flex.flex-col.items-center.text-sm') ||
-                         document.querySelector('.overflow-hidden.w-full.h-full.relative.flex.z-0');
-    
+        document.querySelector('.flex.flex-col.items-center.text-sm') ||
+        document.querySelector('.overflow-hidden.w-full.h-full.relative.flex.z-0');
     if (chatContainer) {
         const observer = new MutationObserver((mutations) => {
             mutations.forEach((mutation) => {
                 mutation.addedNodes.forEach((node) => {
                     if (node.classList && 
                         (node.classList.contains('message') || 
-                         node.classList.contains('group') || 
-                         node.classList.contains('w-full'))) {
-                        console.log('New message detected, handling...');
+                        node.classList.contains('group') || 
+                        node.classList.contains('w-full'))) {
                         handleNewMessage(node);
                     }
                 });
             });
         });
-
-        observer.observe(chatContainer, { 
-            childList: true, 
-            subtree: true 
-        });
-        console.log('Message observer set up');
+        observer.observe(chatContainer, { childList: true, subtree: true });
     }
 }
 
-// Handle new messages
 function handleNewMessage(node) {
-    // Check if topic selector already exists
     if (node.querySelector('.topic-select')) return;
-
     const topicSelect = document.createElement('select');
     topicSelect.className = 'topic-select';
     const topics = getTopics();
@@ -228,25 +202,18 @@ function handleNewMessage(node) {
         option.textContent = topic;
         topicSelect.appendChild(option);
     });
-
-    // Restore saved topic for this message
     const messageId = getMessageId(node);
     const map = getMessageTopicMap();
     if (map[messageId]) {
         topicSelect.value = map[messageId];
     }
-
     topicSelect.addEventListener('change', () => {
         setMessageTopic(messageId, topicSelect.value);
     });
-
     node.appendChild(topicSelect);
-    console.log('Topic selector added to message');
 }
 
-// Topic management functions
 function addTopic(topicName) {
-    console.log('Adding topic:', topicName);
     const topics = getTopics();
     if (!topics.includes(topicName)) {
         topics.push(topicName);
@@ -266,7 +233,6 @@ function saveTopics(topics) {
 }
 
 function updateTopicList() {
-    console.log('Updating topic list...');
     if (!topicList) return;
     topicList.innerHTML = '';
     const topics = getTopics();
@@ -279,57 +245,87 @@ function updateTopicList() {
         topicElement.style.alignItems = 'center';
         topicElement.style.justifyContent = 'space-between';
         topicElement.style.gap = '6px';
-
         // Topic name (clickable to open chat)
         const nameSpan = document.createElement('span');
         nameSpan.textContent = topic;
-        nameSpan.title = topicObj && topicObj.url ? topicObj.url : '';
+        nameSpan.title = '';
         nameSpan.style.flex = '1';
+        nameSpan.style.display = '-webkit-box';
+        nameSpan.style.webkitBoxOrient = 'vertical';
+        nameSpan.style.overflow = 'hidden';
+        nameSpan.style.textOverflow = 'ellipsis';
+        nameSpan.style.webkitLineClamp = '2';
+        nameSpan.style.lineClamp = '2';
+        nameSpan.style.maxHeight = '2.6em';
+        nameSpan.style.whiteSpace = 'normal';
+        nameSpan.style.overflowWrap = 'normal';
+        nameSpan.style.wordBreak = 'normal';
+        nameSpan.style.wordWrap = 'normal';
+        nameSpan.style.lineBreak = 'auto';
+        nameSpan.style.userSelect = 'text';
+        nameSpan.style.cursor = 'pointer';
+        // Custom glassmorphism tooltip
+        let tooltip;
+        nameSpan.addEventListener('mouseenter', (e) => {
+            tooltip = document.createElement('div');
+            tooltip.textContent = topic;
+            tooltip.style.position = 'fixed';
+            tooltip.style.left = (e.clientX + 10) + 'px';
+            tooltip.style.top = (e.clientY + 10) + 'px';
+            tooltip.style.zIndex = '99999';
+            tooltip.style.padding = '10px 18px';
+            tooltip.style.background = 'rgba(255,255,255,0.18)';
+            tooltip.style.backdropFilter = 'blur(8px)';
+            tooltip.style.borderRadius = '14px';
+            tooltip.style.boxShadow = '0 4px 24px rgba(0,0,0,0.18)';
+            tooltip.style.color = '#23272f';
+            tooltip.style.fontSize = '15px';
+            tooltip.style.fontWeight = '500';
+            tooltip.style.border = 'none';
+            tooltip.style.pointerEvents = 'none';
+            tooltip.style.transition = 'opacity 0.2s';
+            tooltip.style.opacity = '0';
+            document.body.appendChild(tooltip);
+            setTimeout(() => { if (tooltip) tooltip.style.opacity = '1'; }, 10);
+        });
+        nameSpan.addEventListener('mousemove', (e) => {
+            if (tooltip) {
+                tooltip.style.left = (e.clientX + 10) + 'px';
+                tooltip.style.top = (e.clientY + 10) + 'px';
+            }
+        });
+        nameSpan.addEventListener('mouseleave', () => {
+            if (tooltip) {
+                tooltip.remove();
+                tooltip = null;
+            }
+        });
         nameSpan.onclick = (e) => {
             if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
             if (topicObj && topicObj.url) window.location.href = topicObj.url;
         };
         topicElement.appendChild(nameSpan);
-
-        // Show chat URL as subtext
-        if (topicObj && topicObj.url) {
-            const urlSub = document.createElement('div');
-            urlSub.textContent = topicObj.url;
-            urlSub.style.fontSize = '10px';
-            urlSub.style.color = '#888';
-            urlSub.style.overflow = 'hidden';
-            urlSub.style.textOverflow = 'ellipsis';
-            urlSub.style.whiteSpace = 'nowrap';
-            urlSub.style.maxWidth = '120px';
-            urlSub.style.marginLeft = '4px';
-            topicElement.appendChild(urlSub);
-        }
-
         // Rename button
         const renameBtn = document.createElement('button');
         renameBtn.textContent = '✏️';
         renameBtn.title = 'Rename topic';
-        renameBtn.style.background = 'none';
+        renameBtn.style.background = 'transparent';
         renameBtn.style.border = 'none';
         renameBtn.style.cursor = 'pointer';
         renameBtn.onclick = (e) => {
             e.stopPropagation();
             const newName = prompt('Rename topic:', topic);
             if (newName && newName !== topic) {
-                // Update in topics array
                 const topicsArr = getTopics().map(t => t === topic ? newName : t);
                 saveTopics(topicsArr);
-                // Update in topic objects
                 const topicObjs = getTopicObjects().map(t => t.name === topic ? { ...t, name: newName } : t);
                 saveTopicObjects(topicObjs);
-                // Update message associations
                 const map = getMessageTopicMap();
                 Object.keys(map).forEach(msgId => {
                     if (map[msgId] === topic) map[msgId] = newName;
                 });
                 saveMessageTopicMap(map);
                 updateTopicList();
-                // Update all topic selects in messages
                 document.querySelectorAll('.topic-select').forEach(select => {
                     Array.from(select.options).forEach(opt => {
                         if (opt.value === topic) opt.value = opt.textContent = newName;
@@ -339,12 +335,11 @@ function updateTopicList() {
             }
         };
         topicElement.appendChild(renameBtn);
-
         // Delete button
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = '🗑️';
         deleteBtn.title = 'Delete topic';
-        deleteBtn.style.background = 'none';
+        deleteBtn.style.background = 'transparent';
         deleteBtn.style.border = 'none';
         deleteBtn.style.cursor = 'pointer';
         deleteBtn.onclick = (e) => {
@@ -361,225 +356,27 @@ function updateTopicList() {
             });
         };
         topicElement.appendChild(deleteBtn);
-
         topicList.appendChild(topicElement);
     });
 }
 
 function loadSavedTopics() {
-    // Retrieve topics from localStorage
-    const topics = getTopics();
-    // Update the topic list UI
     updateTopicList();
-    console.log('Loaded saved topics:', topics);
 }
-
-// Initialize when the page is loaded
-console.log('AI Chat Topic Manager script loaded');
-document.addEventListener('DOMContentLoaded', initializeExtension);
-
-// Also initialize when the page is dynamically updated
-const observer = new MutationObserver((mutations) => {
-    if (!isInitialized) {
-        initializeExtension();
-    }
-});
-
-observer.observe(document.body, {
-    childList: true,
-    subtree: true
-});
-
-// Content script for AI Chat Topic Manager
-console.log('AI Chat Topic Manager content script loaded');
-
-// Function to safely get extension URL
-function getExtensionUrl(path) {
-  try {
-    return chrome.runtime.getURL(path);
-  } catch (error) {
-    console.warn('Error getting extension URL:', error);
-    return null;
-  }
-}
-
-// Function to safely load React refresh
-function loadReactRefresh() {
-  try {
-    const refreshUrl = getExtensionUrl('vendor/react-refresh.js');
-    if (!refreshUrl) {
-      console.warn('Could not get React refresh URL, skipping load');
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = refreshUrl;
-    script.onerror = (error) => {
-      console.warn('React refresh script failed to load:', error);
-    };
-    document.head.appendChild(script);
-  } catch (error) {
-    console.warn('Error loading React refresh:', error);
-  }
-}
-
-// Function to create and inject the topic manager UI
-function createTopicManager() {
-  console.log('Creating topic manager UI...');
-  
-  // Create the main container
-  const container = document.createElement('div');
-  container.id = 'topic-manager-container';
-  container.style.cssText = `
-    position: fixed;
-    right: 20px;
-    top: 20px;
-    width: 300px;
-    background: white;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    padding: 15px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    z-index: 1000;
-  `;
-
-  // Create header
-  const header = document.createElement('div');
-  header.style.cssText = `
-    font-size: 18px;
-    font-weight: bold;
-    margin-bottom: 15px;
-    color: #333;
-  `;
-  header.textContent = 'Topic Manager';
-  container.appendChild(header);
-
-  // Create topic list
-  const topicList = document.createElement('div');
-  topicList.id = 'topic-list';
-  topicList.style.cssText = `
-    max-height: 200px;
-    overflow-y: auto;
-    margin-bottom: 15px;
-    padding: 10px;
-    border: 1px solid #eee;
-    border-radius: 4px;
-  `;
-  container.appendChild(topicList);
-
-  // Create input container
-  const inputContainer = document.createElement('div');
-  inputContainer.style.cssText = `
-    display: flex;
-    gap: 10px;
-  `;
-
-  // Create topic input
-  const topicInput = document.createElement('input');
-  topicInput.type = 'text';
-  topicInput.placeholder = 'Enter topic name';
-  topicInput.style.cssText = `
-    flex: 1;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-  `;
-  inputContainer.appendChild(topicInput);
-
-  // Create add button
-  const addButton = document.createElement('button');
-  addButton.textContent = 'Add Topic';
-  addButton.style.cssText = `
-    padding: 8px 15px;
-    background: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  `;
-  inputContainer.appendChild(addButton);
-
-  container.appendChild(inputContainer);
-
-  // Add event listeners
-  addButton.addEventListener('click', () => {
-    const topicName = topicInput.value.trim();
-    if (topicName) {
-      console.log('Adding topic:', topicName);
-      // Add topic logic here
-      topicInput.value = '';
-    }
-  });
-
-  return container;
-}
-
-// Function to initialize the topic manager
-function initializeTopicManager() {
-  console.log('Initializing topic manager...');
-  
-  // Find the chat container
-  const chatContainer = document.querySelector('main');
-  if (!chatContainer) {
-    console.log('Chat container not found, retrying in 1 second...');
-    setTimeout(initializeTopicManager, 1000);
-    return;
-  }
-
-  console.log('Chat container found, injecting topic manager...');
-  
-  // Create and inject the topic manager
-  const topicManager = createTopicManager();
-  document.body.appendChild(topicManager);
-
-  // Log UI elements for debugging
-  console.log('Topic manager UI elements:', {
-    container: document.getElementById('topic-manager-container'),
-    input: document.querySelector('#topic-manager-container input'),
-    button: document.querySelector('#topic-manager-container button'),
-    list: document.getElementById('topic-list')
-  });
-}
-
-// Start initialization
-console.log('Starting topic manager initialization...');
-
-// Check if we're in a valid extension context
-if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
-  console.log('Extension context valid, loading React refresh...');
-  loadReactRefresh();
-} else {
-  console.warn('Not in a valid extension context, skipping React refresh');
-}
-
-// Initialize the topic manager
-initializeTopicManager();
-
-// Add error handling for module loading
-window.addEventListener('error', (event) => {
-  if (event.filename && event.filename.includes('chrome-extension://')) {
-    console.warn('Extension resource loading error:', event.message);
-    // Continue execution even if some resources fail to load
-    return true;
-  }
-});
 
 // --- Message-Topic Association ---
 function getMessageTopicMap() {
     const map = localStorage.getItem('ai-chat-message-topics');
     return map ? JSON.parse(map) : {};
 }
-
 function saveMessageTopicMap(map) {
     localStorage.setItem('ai-chat-message-topics', JSON.stringify(map));
 }
-
 function setMessageTopic(messageId, topic) {
     const map = getMessageTopicMap();
     map[messageId] = topic;
     saveMessageTopicMap(map);
 }
-
 function removeTopicFromMessages(topic) {
     const map = getMessageTopicMap();
     for (const key in map) {
@@ -589,16 +386,13 @@ function removeTopicFromMessages(topic) {
     }
     saveMessageTopicMap(map);
 }
-
 function getMessageId(node) {
-    // Use a unique identifier for each message node
     if (!node.dataset.topicMessageId) {
         node.dataset.topicMessageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     }
     return node.dataset.topicMessageId;
 }
 
-// --- Draggable and Collapsible Panel ---
 function makePanelDraggable(panel, header) {
     header.style.cursor = 'move';
     header.addEventListener('mousedown', (e) => {
@@ -656,3 +450,73 @@ function getTopicUrlByName(name) {
     const found = topics.find(t => t.name === name);
     return found ? found.url : null;
 }
+
+// --- Glassmorphism Theming ---
+function getGlassTheme() {
+    return localStorage.getItem('ai-chat-topic-glass-theme') || 'dark';
+}
+function setGlassTheme(theme) {
+    localStorage.setItem('ai-chat-topic-glass-theme', theme);
+    applyGlassTheme(theme);
+}
+function applyGlassTheme(theme) {
+    const panel = document.getElementById('topic-manager-container');
+    if (!panel) return;
+    const header = panel.querySelector('.topic-manager-header');
+    const inputs = panel.querySelectorAll('input');
+    const buttons = panel.querySelectorAll('button');
+    if (theme === 'light') {
+        panel.style.background = 'rgba(255,255,255,0.18)';
+        panel.style.backdropFilter = 'blur(16px)';
+        panel.style.border = '1.5px solid rgba(255,255,255,0.3)';
+        panel.style.boxShadow = '0 4px 24px rgba(0,0,0,0.10)';
+        panel.style.color = '#23272f';
+        if (header) {
+            header.style.background = 'rgba(255,255,255,0.28)';
+            header.style.backdropFilter = 'blur(12px)';
+            header.style.color = '#23272f';
+            header.style.borderRadius = '10px 10px 0 0';
+        }
+        inputs.forEach(i => {
+            i.style.background = 'transparent';
+            i.style.color = '#23272f';
+            i.style.border = '1px solid #f3f3f3';
+        });
+        buttons.forEach(b => {
+            b.style.background = 'transparent';
+            b.style.color = '#23272f';
+            b.style.border = '1px solid #f3f3f3';
+        });
+    } else {
+        panel.style.background = 'rgba(36,37,46,0.38)';
+        panel.style.backdropFilter = 'blur(16px)';
+        panel.style.border = '1.5px solid rgba(44,44,60,0.5)';
+        panel.style.boxShadow = '0 4px 24px rgba(0,0,0,0.18)';
+        panel.style.color = '#f3f3f3';
+        if (header) {
+            header.style.background = 'rgba(44,44,60,0.48)';
+            header.style.backdropFilter = 'blur(12px)';
+            header.style.color = '#f3f3f3';
+            header.style.borderRadius = '10px 10px 0 0';
+        }
+        inputs.forEach(i => {
+            i.style.background = 'transparent';
+            i.style.color = '#f3f3f3';
+            i.style.border = '1px solid #f3f3f3';
+        });
+        buttons.forEach(b => {
+            b.style.background = 'transparent';
+            b.style.color = '#f3f3f3';
+            b.style.border = '1px solid #f3f3f3';
+        });
+    }
+}
+
+// Initialize when the page is loaded
+document.addEventListener('DOMContentLoaded', initializeExtension);
+const observer = new MutationObserver(() => {
+    if (!isInitialized) {
+        initializeExtension();
+    }
+});
+observer.observe(document.body, { childList: true, subtree: true });
