@@ -3,6 +3,12 @@ let topicManagerContainer = null;
 let topicList = null;
 let isInitialized = false;
 
+// --- Draggable and Collapsible Panel ---
+let isDragging = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let isCollapsed = false;
+
 // Initialize the extension
 function initializeExtension() {
     console.log('Initializing extension...');
@@ -48,34 +54,65 @@ function createTopicManagerUI(container) {
     topicManagerContainer = document.createElement('div');
     topicManagerContainer.id = 'topic-manager-container';
     topicManagerContainer.className = 'topic-manager';
-    topicManagerContainer.style.border = '2px solid #007bff'; // Make it more visible
-    topicManagerContainer.style.backgroundColor = '#ffffff';
+    topicManagerContainer.style.position = 'fixed';
+    topicManagerContainer.style.right = '20px';
+    topicManagerContainer.style.top = '20px';
+    topicManagerContainer.style.left = 'auto';
+    topicManagerContainer.style.width = '320px';
+    topicManagerContainer.style.background = '#23272f';
+    topicManagerContainer.style.border = '1.5px solid #444';
+    topicManagerContainer.style.borderRadius = '10px';
+    topicManagerContainer.style.boxShadow = '0 4px 24px rgba(0,0,0,0.18)';
+    topicManagerContainer.style.zIndex = '10000';
+    topicManagerContainer.style.color = '#f3f3f3';
+    topicManagerContainer.style.fontFamily = 'Inter, Arial, sans-serif';
+    topicManagerContainer.style.transition = 'box-shadow 0.2s';
 
-    // Create header
+    // Header with drag handle and collapse button
     const header = document.createElement('div');
     header.className = 'topic-manager-header';
     header.textContent = 'Topic Manager';
-    header.style.padding = '10px';
-    header.style.backgroundColor = '#007bff';
-    header.style.color = 'white';
-    header.style.borderRadius = '8px 8px 0 0';
+    header.style.padding = '12px 16px';
+    header.style.background = '#343541';
+    header.style.color = '#fff';
+    header.style.borderRadius = '10px 10px 0 0';
     header.style.fontWeight = 'bold';
-    topicManagerContainer.appendChild(header);
+    header.style.display = 'flex';
+    header.style.alignItems = 'center';
+    header.style.justifyContent = 'space-between';
+    header.style.userSelect = 'none';
 
-    // Create topic list
+    // Collapse/expand button
+    const collapseBtn = document.createElement('button');
+    collapseBtn.textContent = '▲';
+    collapseBtn.style.background = 'none';
+    collapseBtn.style.border = 'none';
+    collapseBtn.style.color = '#fff';
+    collapseBtn.style.fontSize = '18px';
+    collapseBtn.style.cursor = 'pointer';
+    collapseBtn.style.marginLeft = '10px';
+    header.appendChild(collapseBtn);
+
+    // Content area (everything except header)
+    const contentArea = document.createElement('div');
+    contentArea.id = 'topic-manager-content';
+
+    // Topic list
     topicList = document.createElement('div');
     topicList.id = 'topic-list';
     topicList.className = 'topic-list';
     topicList.style.padding = '10px';
     topicList.style.maxHeight = '200px';
     topicList.style.overflowY = 'auto';
+    topicList.style.background = 'transparent';
 
-    // Create input container
+    // Input container
     const inputContainer = document.createElement('div');
     inputContainer.style.padding = '10px';
-    inputContainer.style.borderTop = '1px solid #eee';
+    inputContainer.style.borderTop = '1px solid #333';
+    inputContainer.style.background = 'transparent';
 
-    // Create topic input
+    // Topic input
     const topicInput = document.createElement('input');
     topicInput.id = 'topic-input';
     topicInput.type = 'text';
@@ -84,31 +121,44 @@ function createTopicManagerUI(container) {
     topicInput.style.width = '100%';
     topicInput.style.marginBottom = '10px';
     topicInput.style.padding = '8px';
-    topicInput.style.border = '1px solid #ddd';
+    topicInput.style.border = '1px solid #444';
     topicInput.style.borderRadius = '4px';
+    topicInput.style.background = '#23272f';
+    topicInput.style.color = '#f3f3f3';
 
-    // Create add topic button
+    // Add topic button
     const addTopicButton = document.createElement('button');
     addTopicButton.id = 'add-topic';
     addTopicButton.textContent = '+ Add Topic';
     addTopicButton.className = 'add-topic-button';
     addTopicButton.style.width = '100%';
     addTopicButton.style.padding = '8px';
-    addTopicButton.style.backgroundColor = '#007bff';
+    addTopicButton.style.background = '#007bff';
     addTopicButton.style.color = 'white';
     addTopicButton.style.border = 'none';
     addTopicButton.style.borderRadius = '4px';
     addTopicButton.style.cursor = 'pointer';
+    addTopicButton.style.fontWeight = 'bold';
+    addTopicButton.style.fontSize = '15px';
+    addTopicButton.style.marginTop = '2px';
 
-    // Append elements
+    // Assemble content area
+    contentArea.appendChild(topicList);
+    contentArea.appendChild(inputContainer);
     inputContainer.appendChild(topicInput);
     inputContainer.appendChild(addTopicButton);
-    topicManagerContainer.appendChild(topicList);
-    topicManagerContainer.appendChild(inputContainer);
 
-    // Add to page
+    // Add header and content to panel
+    topicManagerContainer.appendChild(header);
+    topicManagerContainer.appendChild(contentArea);
     container.appendChild(topicManagerContainer);
-    console.log('Topic manager UI added to page');
+
+    // Make draggable
+    makePanelDraggable(topicManagerContainer, header);
+    // Collapse/expand
+    collapseBtn.onclick = () => togglePanelCollapse(topicManagerContainer, contentArea, collapseBtn);
+    // Start expanded
+    isCollapsed = false;
 }
 
 // Setup event listeners
@@ -485,4 +535,37 @@ function getMessageId(node) {
         node.dataset.topicMessageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     }
     return node.dataset.topicMessageId;
+}
+
+// --- Draggable and Collapsible Panel ---
+function makePanelDraggable(panel, header) {
+    header.style.cursor = 'move';
+    header.addEventListener('mousedown', (e) => {
+        isDragging = true;
+        dragOffsetX = e.clientX - panel.offsetLeft;
+        dragOffsetY = e.clientY - panel.offsetTop;
+        document.body.style.userSelect = 'none';
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            panel.style.left = (e.clientX - dragOffsetX) + 'px';
+            panel.style.top = (e.clientY - dragOffsetY) + 'px';
+            panel.style.right = 'auto';
+        }
+    });
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        document.body.style.userSelect = '';
+    });
+}
+
+function togglePanelCollapse(panel, content, collapseBtn) {
+    isCollapsed = !isCollapsed;
+    if (isCollapsed) {
+        content.style.display = 'none';
+        collapseBtn.textContent = '▼';
+    } else {
+        content.style.display = '';
+        collapseBtn.textContent = '▲';
+    }
 } 
