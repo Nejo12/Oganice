@@ -176,8 +176,6 @@ function handleNewMessage(node) {
 
     const topicSelect = document.createElement('select');
     topicSelect.className = 'topic-select';
-    
-    // Add current topics to select
     const topics = getTopics();
     topics.forEach(topic => {
         const option = document.createElement('option');
@@ -186,7 +184,17 @@ function handleNewMessage(node) {
         topicSelect.appendChild(option);
     });
 
-    // Add to message
+    // Restore saved topic for this message
+    const messageId = getMessageId(node);
+    const map = getMessageTopicMap();
+    if (map[messageId]) {
+        topicSelect.value = map[messageId];
+    }
+
+    topicSelect.addEventListener('change', () => {
+        setMessageTopic(messageId, topicSelect.value);
+    });
+
     node.appendChild(topicSelect);
     console.log('Topic selector added to message');
 }
@@ -214,14 +222,35 @@ function saveTopics(topics) {
 function updateTopicList() {
     console.log('Updating topic list...');
     if (!topicList) return;
-    
     topicList.innerHTML = '';
     const topics = getTopics();
-    
     topics.forEach(topic => {
         const topicElement = document.createElement('div');
         topicElement.className = 'topic-item';
         topicElement.textContent = topic;
+        // Add delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.textContent = '🗑️';
+        deleteBtn.style.marginLeft = '10px';
+        deleteBtn.style.background = 'none';
+        deleteBtn.style.border = 'none';
+        deleteBtn.style.cursor = 'pointer';
+        deleteBtn.title = 'Delete topic';
+        deleteBtn.onclick = () => {
+            // Remove topic from topics and from all message associations
+            const topicsArr = getTopics().filter(t => t !== topic);
+            saveTopics(topicsArr);
+            removeTopicFromMessages(topic);
+            updateTopicList();
+            // Optionally, update all topic selects in messages
+            document.querySelectorAll('.topic-select').forEach(select => {
+                const optionToRemove = Array.from(select.options).find(opt => opt.value === topic);
+                if (optionToRemove) select.removeChild(optionToRemove);
+                // If the removed topic was selected, clear selection
+                if (select.value === topic) select.value = '';
+            });
+        };
+        topicElement.appendChild(deleteBtn);
         topicList.appendChild(topicElement);
     });
 }
@@ -422,4 +451,38 @@ window.addEventListener('error', (event) => {
     // Continue execution even if some resources fail to load
     return true;
   }
-}); 
+});
+
+// --- Message-Topic Association ---
+function getMessageTopicMap() {
+    const map = localStorage.getItem('ai-chat-message-topics');
+    return map ? JSON.parse(map) : {};
+}
+
+function saveMessageTopicMap(map) {
+    localStorage.setItem('ai-chat-message-topics', JSON.stringify(map));
+}
+
+function setMessageTopic(messageId, topic) {
+    const map = getMessageTopicMap();
+    map[messageId] = topic;
+    saveMessageTopicMap(map);
+}
+
+function removeTopicFromMessages(topic) {
+    const map = getMessageTopicMap();
+    for (const key in map) {
+        if (map[key] === topic) {
+            delete map[key];
+        }
+    }
+    saveMessageTopicMap(map);
+}
+
+function getMessageId(node) {
+    // Use a unique identifier for each message node
+    if (!node.dataset.topicMessageId) {
+        node.dataset.topicMessageId = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    }
+    return node.dataset.topicMessageId;
+} 
