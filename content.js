@@ -43,14 +43,9 @@ function initializeExtension() {
 // Create the topic manager UI
 function createTopicManagerUI(container) {
     console.log('Creating topic manager UI...');
-    
-    // Remove existing container if it exists
     const existingContainer = document.getElementById('topic-manager-container');
-    if (existingContainer) {
-        existingContainer.remove();
-    }
+    if (existingContainer) existingContainer.remove();
 
-    // Create container
     topicManagerContainer = document.createElement('div');
     topicManagerContainer.id = 'topic-manager-container';
     topicManagerContainer.className = 'topic-manager';
@@ -256,6 +251,7 @@ function addTopic(topicName) {
     if (!topics.includes(topicName)) {
         topics.push(topicName);
         saveTopics(topics);
+        addTopicObject(topicName);
         updateTopicList();
     }
 }
@@ -275,32 +271,97 @@ function updateTopicList() {
     topicList.innerHTML = '';
     const topics = getTopics();
     topics.forEach(topic => {
+        const topicObj = getTopicObjects().find(t => t.name === topic);
         const topicElement = document.createElement('div');
         topicElement.className = 'topic-item';
-        topicElement.textContent = topic;
-        // Add delete button
+        topicElement.style.cursor = 'pointer';
+        topicElement.style.display = 'flex';
+        topicElement.style.alignItems = 'center';
+        topicElement.style.justifyContent = 'space-between';
+        topicElement.style.gap = '6px';
+
+        // Topic name (clickable to open chat)
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = topic;
+        nameSpan.title = topicObj && topicObj.url ? topicObj.url : '';
+        nameSpan.style.flex = '1';
+        nameSpan.onclick = (e) => {
+            if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+            if (topicObj && topicObj.url) window.location.href = topicObj.url;
+        };
+        topicElement.appendChild(nameSpan);
+
+        // Show chat URL as subtext
+        if (topicObj && topicObj.url) {
+            const urlSub = document.createElement('div');
+            urlSub.textContent = topicObj.url;
+            urlSub.style.fontSize = '10px';
+            urlSub.style.color = '#888';
+            urlSub.style.overflow = 'hidden';
+            urlSub.style.textOverflow = 'ellipsis';
+            urlSub.style.whiteSpace = 'nowrap';
+            urlSub.style.maxWidth = '120px';
+            urlSub.style.marginLeft = '4px';
+            topicElement.appendChild(urlSub);
+        }
+
+        // Rename button
+        const renameBtn = document.createElement('button');
+        renameBtn.textContent = '✏️';
+        renameBtn.title = 'Rename topic';
+        renameBtn.style.background = 'none';
+        renameBtn.style.border = 'none';
+        renameBtn.style.cursor = 'pointer';
+        renameBtn.onclick = (e) => {
+            e.stopPropagation();
+            const newName = prompt('Rename topic:', topic);
+            if (newName && newName !== topic) {
+                // Update in topics array
+                const topicsArr = getTopics().map(t => t === topic ? newName : t);
+                saveTopics(topicsArr);
+                // Update in topic objects
+                const topicObjs = getTopicObjects().map(t => t.name === topic ? { ...t, name: newName } : t);
+                saveTopicObjects(topicObjs);
+                // Update message associations
+                const map = getMessageTopicMap();
+                Object.keys(map).forEach(msgId => {
+                    if (map[msgId] === topic) map[msgId] = newName;
+                });
+                saveMessageTopicMap(map);
+                updateTopicList();
+                // Update all topic selects in messages
+                document.querySelectorAll('.topic-select').forEach(select => {
+                    Array.from(select.options).forEach(opt => {
+                        if (opt.value === topic) opt.value = opt.textContent = newName;
+                    });
+                    if (select.value === topic) select.value = newName;
+                });
+            }
+        };
+        topicElement.appendChild(renameBtn);
+
+        // Delete button
         const deleteBtn = document.createElement('button');
         deleteBtn.textContent = '🗑️';
-        deleteBtn.style.marginLeft = '10px';
+        deleteBtn.title = 'Delete topic';
         deleteBtn.style.background = 'none';
         deleteBtn.style.border = 'none';
         deleteBtn.style.cursor = 'pointer';
-        deleteBtn.title = 'Delete topic';
-        deleteBtn.onclick = () => {
-            // Remove topic from topics and from all message associations
+        deleteBtn.onclick = (e) => {
+            e.stopPropagation();
             const topicsArr = getTopics().filter(t => t !== topic);
             saveTopics(topicsArr);
             removeTopicFromMessages(topic);
+            removeTopicObject(topic);
             updateTopicList();
-            // Optionally, update all topic selects in messages
             document.querySelectorAll('.topic-select').forEach(select => {
                 const optionToRemove = Array.from(select.options).find(opt => opt.value === topic);
                 if (optionToRemove) select.removeChild(optionToRemove);
-                // If the removed topic was selected, clear selection
                 if (select.value === topic) select.value = '';
             });
         };
         topicElement.appendChild(deleteBtn);
+
         topicList.appendChild(topicElement);
     });
 }
@@ -568,4 +629,30 @@ function togglePanelCollapse(panel, content, collapseBtn) {
         content.style.display = '';
         collapseBtn.textContent = '▲';
     }
-} 
+}
+
+// --- Topic-to-Chat Linking ---
+function getTopicObjects() {
+    const raw = localStorage.getItem('ai-chat-topics-objects');
+    return raw ? JSON.parse(raw) : [];
+}
+function saveTopicObjects(topics) {
+    localStorage.setItem('ai-chat-topics-objects', JSON.stringify(topics));
+}
+function addTopicObject(name) {
+    const url = window.location.href;
+    const topics = getTopicObjects();
+    if (!topics.some(t => t.name === name)) {
+        topics.push({ name, url });
+        saveTopicObjects(topics);
+    }
+}
+function removeTopicObject(name) {
+    const topics = getTopicObjects().filter(t => t.name !== name);
+    saveTopicObjects(topics);
+}
+function getTopicUrlByName(name) {
+    const topics = getTopicObjects();
+    const found = topics.find(t => t.name === name);
+    return found ? found.url : null;
+}
