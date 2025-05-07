@@ -1,0 +1,61 @@
+{
+  "manifest_version": 3,
+  "name": "AI Chat Topic Manager",
+  "version": "1.0",
+  "description": "Manage and organize your AI chat conversations by topics",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://chat.openai.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vendor/react-refresh.js",
+        "vendor/*.js"
+      ],
+      "matches": ["<all_urls>"]
+    },
+    {
+      "resources": [
+        "assets/content-script-preamble.js",
+        "styles.css",
+        "content.js",
+        "popup.html",
+        "popup.js",
+        "background.js"
+      ],
+      "matches": ["https://chat.openai.com/*"]
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+} 
