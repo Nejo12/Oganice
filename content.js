@@ -264,6 +264,11 @@ function updateTopicList() {
         nameSpan.style.lineBreak = 'auto';
         nameSpan.style.userSelect = 'text';
         nameSpan.style.cursor = 'pointer';
+        // Highlight if this topic is the current one
+        if (topicObj && topicObj.url && topicObj.url.replace(/\/$/, '') === window.location.href.replace(/\/$/, '')) {
+            nameSpan.style.color = '#FFD700';
+            nameSpan.style.fontWeight = 'bold';
+        }
         // Custom glassmorphism tooltip
         let tooltip;
         nameSpan.addEventListener('mouseenter', (e) => {
@@ -485,7 +490,7 @@ function applyGlassTheme(theme) {
         buttons.forEach(b => {
             b.style.background = 'transparent';
             b.style.color = '#23272f';
-            b.style.border = '1px solid #f3f3f3';
+            b.style.border = 'none';
         });
     } else {
         panel.style.background = 'rgba(36,37,46,0.38)';
@@ -507,7 +512,7 @@ function applyGlassTheme(theme) {
         buttons.forEach(b => {
             b.style.background = 'transparent';
             b.style.color = '#f3f3f3';
-            b.style.border = '1px solid #f3f3f3';
+            b.style.border = 'none';
         });
     }
 }
