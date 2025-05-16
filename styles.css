@@ -1,23 +1,51 @@
+:root {
+    --bg-primary: rgba(30, 30, 30, 0.5);
+    --bg-secondary: rgba(40, 40, 40, 0.4);
+    --text-color: #fff;
+    --border-color: rgba(255, 255, 255, 0.2);
+    --shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    --bookmark-color: #2ecc71;
+    --edit-color: #B8860B;
+    --trash-color: #FF0000;
+    --close-color: #FF5555;
+}
+
+[data-theme="light"] {
+    --bg-primary: rgba(240, 240, 240, 0.5);
+    --bg-secondary: rgba(230, 230, 230, 0.4);
+    --text-color: #333;
+    --border-color: rgba(0, 0, 0, 0.2);
+    --shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    --bookmark-color: #2ecc71;
+    --edit-color: #B8860B;
+    --trash-color: #FF0000;
+    --close-color: #FF5555;
+}
+
 .topic-manager {
     position: fixed;
     top: 4rem;
     right: 4rem;
     width: 60px;
     height: 60px;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-primary);
     backdrop-filter: blur(10px);
     border-radius: 50%;
     padding: 0;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
     z-index: 1000;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: #fff;
-    transition: width 0.3s ease, height 0.3s ease, border-radius 0.3s ease;
+    color: var(--text-color);
+    transition: all 0.3s ease; /* Smooth transition for all properties */
     cursor: grab;
 }
 
-.topic-manager.ball .sidebar-content {
+.topic-manager.ball .sidebar-content,
+.topic-manager.ball .theme-toggle,
+.topic-manager.ball .custom-title-list,
+.topic-manager.ball .topic-input-div,
+.topic-manager.ball .topic-list {
     display: none;
 }
 
@@ -29,6 +57,7 @@
     height: 100%;
     font-size: 24px;
     opacity: 0.7;
+    cursor: pointer;
 }
 
 .topic-manager.ball:hover .ball-icon {
@@ -42,10 +71,10 @@
     border-radius: 12px;
     padding: 15px;
     overflow-y: auto;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-primary);
     backdrop-filter: blur(10px);
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
 }
 
 .topic-manager:not(.ball) .ball-icon {
@@ -70,6 +99,7 @@
     flex-grow: 1;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--text-color);
 }
 
 #ai-chat-title-edit {
@@ -79,26 +109,53 @@
 #ai-chat-title-input {
     width: 100%;
     padding: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.2);
-    color: #fff;
+    background: var(--bg-secondary);
+    color: var(--text-color);
 }
 
 .edit-icon {
     cursor: pointer;
     font-size: 14px;
     opacity: 0.7;
+    color: var(--edit-color);
 }
 
 .edit-icon:hover {
     opacity: 1;
 }
 
+.close-icon {
+    cursor: pointer;
+    font-size: 12px;
+    opacity: 0.7;
+    color: var(--close-color);
+}
+
+.close-icon:hover {
+    opacity: 1;
+}
+
+.theme-toggle {
+    margin: 0 1rem;
+}
+
+#theme-switch {
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+#theme-switch:hover {
+    background: var(--bg-primary);
+}
+
 .sidebar-divider {
     border: 0;
     height: 1px;
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--border-color);
     margin: 10px 0;
 }
 
@@ -114,14 +171,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-color);
 }
 
 .custom-title-item:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-secondary);
 }
 
 .custom-title-item.current {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--bg-secondary);
     font-weight: 600;
 }
 
@@ -134,23 +192,23 @@
 .topic-input {
     flex-grow: 1;
     padding: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.2);
-    color: #fff;
+    background: var(--bg-secondary);
+    color: var(--text-color);
 }
 
 .add-topic-button {
     padding: 6px 10px;
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--bg-secondary);
     border: none;
     border-radius: 4px;
-    color: #fff;
+    color: var(--text-color);
     cursor: pointer;
 }
 
 .add-topic-button:hover {
-    background: rgba(255, 255, 255, 0.3);
+    background: var(--bg-primary);
 }
 
 .topic-list {
@@ -176,15 +234,18 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-color);
+    font-weight: 700;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .topic-item:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-secondary);
 }
 
 .topic-item.current {
-    background: rgba(255, 255, 255, 0.2);
-    font-weight: 600;
+    background: var(--bg-secondary);
+    font-weight: 700;
 }
 
 .topic-item.no-topic {
@@ -195,11 +256,11 @@
     cursor: pointer;
     font-size: 12px;
     opacity: 0.7;
+    color: var(--trash-color) !important;
 }
 
 .delete-topic:hover {
     opacity: 1;
-    color: #ff4d4d;
 }
 
 .bookmark-list-item {
@@ -209,10 +270,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    max-width: 360px;
+    color: var(--text-color);
 }
 
 .bookmark-list-item:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: var(--bg-secondary);
 }
 
 .bookmark-bar {
@@ -221,13 +284,18 @@
     gap: 5px;
     margin-bottom: 4px;
     padding: 2px 4px;
-    background: rgba(0, 0, 0, 0.1);
+    background: transparent;
 }
 
 .topic-bookmark {
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     opacity: 0.7;
+    color: var(--bookmark-color);
+    padding: 0;
+    border: none;
+    background: none;
+    animation: bounce 1.5s infinite ease-in-out;
 }
 
 .topic-bookmark:hover {
@@ -235,28 +303,44 @@
 }
 
 .topic-bookmark.assigned {
-    color: #ffd700;
+    color: var(--bookmark-color);
 }
 
 .bookmark-label {
     font-size: 12px;
-    color: #ddd;
+    color: var(--text-color);
 }
 
 .topic-input-inline {
     width: 100px;
     padding: 2px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.2);
-    color: #fff;
+    background: var(--bg-secondary);
+    color: var(--text-color);
 }
 
 .topic-select {
     padding: 2px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.2);
-    color: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    backdrop-filter: blur(10px);
+    color: var(--text-color);
     font-size: 12px;
+    transition: border-radius 0.3s ease, width 0.3s ease;
+    width: 24px;
+    overflow: hidden;
+    appearance: none;
+}
+
+.topic-select:focus,
+.topic-select:hover {
+    border-radius: 4px;
+    width: 120px;
+}
+
+@keyframes bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
 }

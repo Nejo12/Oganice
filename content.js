@@ -49,7 +49,7 @@ function observeChatContainer() {
     }
 }
 
-// --- Sidebar Injection and Chat Title Management ---
+// --- Sidebar Injection and Theme Management ---
 function getChatTitleFromDOM() {
     const conversationId = getConversationIdFromUrl();
     if (!conversationId) return 'Untitled Chat';
@@ -81,6 +81,10 @@ function ensureSidebar() {
                     <span id="ai-chat-topic-title"></span>
                     <span id="ai-chat-title-edit"><input id="ai-chat-title-input" type="text" /></span>
                     <span class="edit-icon" title="Edit title">✎</span>
+                    <div class="theme-toggle">
+                    <button id="theme-switch">🌙</button>
+                    </div>
+                    <span class="close-icon" title="Minimize">✕</span>
                 </div>
                 <div class="custom-title-list"></div>
                 <hr class="sidebar-divider">
@@ -97,11 +101,38 @@ function ensureSidebar() {
         if (editIcon) {
             editIcon.onclick = showTitleEditInput;
         }
+        // Set up close icon handler
+        const closeIcon = sidebar.querySelector('.close-icon');
+        if (closeIcon) {
+            closeIcon.onclick = () => {
+                sidebar.className = 'topic-manager ball';
+                browser.storage.local.set({ sidebarState: 'collapsed' }, () => {
+                    console.log('Sidebar collapsed');
+                });
+            };
+        }
+        // Set up theme toggle
+        const themeSwitch = sidebar.querySelector('#theme-switch');
+        if (themeSwitch) {
+            browser.storage.local.get(['theme'], (result) => {
+                const theme = result.theme || 'dark';
+                document.body.setAttribute('data-theme', theme);
+                themeSwitch.textContent = theme === 'dark' ? '☀️' : '🌙';
+                themeSwitch.onclick = () => {
+                    const newTheme = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                    document.body.setAttribute('data-theme', newTheme);
+                    themeSwitch.textContent = newTheme === 'dark' ? '☀️' : '🌙';
+                    browser.storage.local.set({ theme: newTheme }, () => {
+                        console.log(`Theme switched to ${newTheme}`);
+                    });
+                };
+            });
+        }
         // Set up topic input handler
         const input = sidebar.querySelector('.topic-input');
         const button = sidebar.querySelector('.add-topic-button');
         if (input && button) {
-            button.onclick = () => {
+            const saveTopic = () => {
                 const name = input.value.trim();
                 if (!name) return;
                 const conversationId = getConversationIdFromUrl();
@@ -112,21 +143,29 @@ function ensureSidebar() {
                     setTopicsForConversation(conversationId, topics, () => {
                         input.value = '';
                         renderTopicList();
+                        console.log(`Topic "${name}" saved for conversation ${conversationId}`);
                     });
                 });
+            };
+            button.onclick = saveTopic;
+            input.onblur = saveTopic;
+            input.onkeydown = (e) => {
+                if (e.key === 'Enter') saveTopic();
             };
         }
         // Set up ball toggle
         sidebar.onclick = (e) => {
             if (sidebar.classList.contains('ball') && e.target.closest('.ball-icon')) {
-                sidebar.classList.remove('ball');
-                browser.storage.local.set({ sidebarState: 'expanded' });
+                sidebar.className = 'topic-manager'; // Remove 'ball' to expand
+                browser.storage.local.set({ sidebarState: 'expanded' }, () => {
+                    console.log('Sidebar expanded');
+                });
             }
         };
         // Load saved state and position
         browser.storage.local.get(['sidebarState', 'sidebarPosition'], (result) => {
             if (result.sidebarState === 'expanded') {
-                sidebar.classList.remove('ball');
+                sidebar.className = 'topic-manager';
             }
             if (result.sidebarPosition) {
                 sidebar.style.top = result.sidebarPosition.top || '4rem';
@@ -152,7 +191,7 @@ function makeDraggable(element) {
     let initialY;
 
     element.addEventListener('mousedown', (e) => {
-        if (e.target.closest('.topic-input, .add-topic-button, .edit-icon, .topic-bookmark, .topic-select, #ai-chat-title-input, .delete-topic')) return;
+        if (e.target.closest('.topic-input, .add-topic-button, .edit-icon, .topic-bookmark, .topic-select, #ai-chat-title-input, .delete-topic, #theme-switch, .close-icon')) return;
         initialX = e.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - element.offsetWidth));
         initialY = e.clientY - parseFloat(element.style.top) || 64; // 64px = 4rem
         isDragging = true;
@@ -170,10 +209,20 @@ function makeDraggable(element) {
             const maxY = window.innerHeight - rect.height;
             currentX = Math.max(0, Math.min(currentX, maxX));
             currentY = Math.max(0, Math.min(currentY, maxY));
-            element.style.left = currentX + 'px';
+
+            // Update both left and right based on position
+            if (currentX <= window.innerWidth / 2) {
+                element.style.left = currentX + 'px';
+                element.style.right = 'auto';
+            } else {
+                element.style.right = (window.innerWidth - (currentX + rect.width)) + 'px';
+                element.style.left = 'auto';
+            }
             element.style.top = currentY + 'px';
-            element.style.right = 'auto';
-            browser.storage.local.set({ sidebarPosition: { top: element.style.top, left: element.style.left, right: 'auto' } });
+
+            browser.storage.local.set({ sidebarPosition: { top: element.style.top, left: element.style.left, right: element.style.right } }, () => {
+                console.log('Sidebar position updated');
+            });
         }
     });
 
@@ -195,7 +244,9 @@ function setCustomChatTitle(conversationId, title, callback) {
     browser.storage.local.get(['customChatTitles'], (result) => {
         const titles = result.customChatTitles || {};
         titles[conversationId] = title;
-        browser.storage.local.set({ customChatTitles: titles }, callback);
+        browser.storage.local.set({ customChatTitles: titles }, callback || (() => {
+            console.log(`Custom title "${title}" saved for conversation ${conversationId}`);
+        }));
     });
 }
 
@@ -303,7 +354,9 @@ function setTopicsForConversation(conversationId, topics, callback) {
     browser.storage.local.get(['topicsByConversation'], (result) => {
         const allTopics = result.topicsByConversation || {};
         allTopics[conversationId] = topics;
-        browser.storage.local.set({ topicsByConversation: allTopics }, callback);
+        browser.storage.local.set({ topicsByConversation: allTopics }, callback || (() => {
+            console.log(`Topics updated for conversation ${conversationId}`);
+        }));
     });
 }
 
@@ -321,7 +374,9 @@ function deleteTopic(conversationId, topicId, callback) {
             });
             allBookmarks[conversationId] = bookmarks;
             browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
-                setTopicsForConversation(conversationId, updatedTopics, callback);
+                setTopicsForConversation(conversationId, updatedTopics, callback || (() => {
+                    console.log(`Topic ${topicId} deleted from conversation ${conversationId}`);
+                }));
             });
         });
     });
@@ -360,7 +415,7 @@ function renderTopicList() {
                 if (noTopicBookmarks.length) {
                     const noTopicDiv = document.createElement('div');
                     noTopicDiv.className = 'topic-item no-topic' + (currentTopicId === null ? ' current' : '');
-                    noTopicDiv.textContent = 'No Topic';
+                    noTopicDiv.textContent = 'untitled';
                     noTopicDiv.onclick = () => setCurrentTopic(null);
                     topicListDiv.appendChild(noTopicDiv);
 
@@ -430,7 +485,10 @@ function setCurrentTopic(topicId) {
     browser.storage.local.get(['currentTopicByConversation'], (result) => {
         const currentTopicByConversation = result.currentTopicByConversation || {};
         currentTopicByConversation[conversationId] = topicId;
-        browser.storage.local.set({ currentTopicByConversation }, renderTopicList);
+        browser.storage.local.set({ currentTopicByConversation }, () => {
+            renderTopicList();
+            console.log(`Current topic set to ${topicId} for conversation ${conversationId}`);
+        });
     });
 }
 
@@ -461,8 +519,8 @@ function renderUserMessageBookmarks() {
                     if (bookmarks[messageId]) {
                         const icon = document.createElement('span');
                         icon.className = 'topic-bookmark assigned';
+                        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path><line x1="12" y1="7" x2="12" y2="13"></line></svg>`;
                         icon.title = 'Edit bookmark';
-                        icon.innerHTML = '✎';
                         bar.appendChild(icon);
                         const label = document.createElement('span');
                         label.className = 'bookmark-label';
@@ -482,14 +540,15 @@ function renderUserMessageBookmarks() {
                                 allBookmarks[conversationId][messageId].topicId = topicId || undefined;
                                 browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
                                     renderTopicList();
+                                    console.log(`Bookmark ${messageId} updated for conversation ${conversationId}`);
                                 });
                             });
                         };
                     } else {
                         const icon = document.createElement('span');
                         icon.className = 'topic-bookmark';
+                        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path><line x1="12" y1="7" x2="12" y2="13"></line></svg>`;
                         icon.title = 'Add bookmark';
-                        icon.innerHTML = '🔖';
                         bar.appendChild(icon);
                         icon.onclick = () => showBookmarkInput(bar, messageId, '', topics);
                     }
@@ -530,6 +589,7 @@ function showBookmarkInput(bar, messageId, currentName, topics, currentTopicId) 
             browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
                 renderUserMessageBookmarks();
                 renderTopicList();
+                console.log(`Bookmark ${messageId} saved for conversation ${conversationId}`);
             });
         });
     }
