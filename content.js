@@ -1,3 +1,8 @@
+// Ensure cross-browser compatibility
+if (typeof browser === "undefined") {
+    var browser = chrome;
+}
+
 // --- Utility to get conversation_id from URL ---
 function getConversationIdFromUrl() {
     const match = window.location.pathname.match(/\/c\/([a-zA-Z0-9\-]+)/);
@@ -21,7 +26,6 @@ function extractMessagesFromDOM() {
         const content = contentNode ? contentNode.textContent : '';
         messages.push({ id, author, content, node, conversationId: getConversationIdFromUrl() });
     });
-    // Only log and update if the message IDs have changed
     if (ids.join(',') !== lastMessageIds.join(',')) {
         lastMessageIds = ids;
         domMessages = messages;
@@ -30,130 +34,174 @@ function extractMessagesFromDOM() {
 }
 
 function debouncedExtractMessages() {
-    if (extractTimeout) clearTimeout(extractTimeout);
-    extractTimeout = setTimeout(() => {
-        extractMessagesFromDOM();
-    }, 300); // 300ms debounce
+    clearTimeout(extractTimeout);
+    extractTimeout = setTimeout(extractMessagesFromDOM, 300);
 }
 
-// Initial extraction after page load
-window.addEventListener('load', () => {
-    setTimeout(() => {
-        extractMessagesFromDOM();
-    }, 2000); // Wait for chat to render
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        extractMessagesFromDOM();
-    }, 2000);
-});
-
-// Observe DOM for new messages
+// --- Observe DOM for new messages ---
 function observeChatContainer() {
     const chatContainer = document.querySelector('main') || 
-        document.querySelector('.flex.flex-col.items-center.text.sm') ||
-        document.querySelector('.overflow-hidden.w-full.h-full.relative.flex.z-0');
+        document.querySelector('[role="main"]') ||
+        document.body;
     if (chatContainer) {
-        const observer = new MutationObserver(() => {
-            debouncedExtractMessages();
-        });
+        const observer = new MutationObserver(debouncedExtractMessages);
         observer.observe(chatContainer, { childList: true, subtree: true });
     }
 }
 
-observeChatContainer();
-
-// --- Sidebar Injection and Chat Title Management (Glassmorphism) ---
-
+// --- Sidebar Injection and Chat Title Management ---
 function getChatTitleFromDOM() {
-    // Get the current conversation ID from the URL
     const conversationId = getConversationIdFromUrl();
     if (!conversationId) return 'Untitled Chat';
-    // Find the sidebar link whose href contains the conversation ID
-    const sidebarLink = document.querySelector(`a[href*='${conversationId}']`);
+    const sidebarLink = document.querySelector(`a[href*='c/${conversationId}']`);
     if (sidebarLink) {
-        // Find the closest history item <li> ancestor
-        const historyItem = sidebarLink.closest("li[data-testid^='history-item']");
+        const historyItem = sidebarLink.closest('li[data-testid^="history-item"]');
         if (historyItem) {
-            // Find the .grow div inside the history item
             const growDiv = historyItem.querySelector('div.grow');
-            if (growDiv && growDiv.textContent.trim().length > 0) {
+            if (growDiv && growDiv.textContent.trim()) {
                 return growDiv.textContent.trim();
             }
         }
     }
-    // Fallback: try previous selectors (main h1/h2, etc.)
-    let titleNode = document.querySelector('.text-token-title');
-    if (!titleNode) {
-        titleNode = document.querySelector('nav h1, nav h2, nav span, nav div');
-    }
-    if (!titleNode) {
-        titleNode = document.querySelector('main h1, main h2, main span, main div');
-    }
-    if (titleNode && titleNode.textContent.trim().length > 0) {
-        return titleNode.textContent.trim();
-    }
-    return 'Untitled Chat';
+    const titleNode = document.querySelector('.text-token-title') ||
+        document.querySelector('main h1, main h2') ||
+        document.querySelector('nav h1, nav h2');
+    return titleNode && titleNode.textContent.trim() ? titleNode.textContent.trim() : 'Untitled Chat';
 }
 
 function ensureSidebar() {
     let sidebar = document.querySelector('.topic-manager');
     if (!sidebar) {
         sidebar = document.createElement('div');
-        sidebar.className = 'topic-manager';
+        sidebar.className = 'topic-manager ball';
         sidebar.innerHTML = `
-            <div class="chat-title-section">
-                <span id="ai-chat-topic-title" title="Click to rename"></span>
-                <span id="ai-chat-title-edit"><input id="ai-chat-title-input" type="text" /></span>
+            <div class="ball-icon">💬</div>
+            <div class="sidebar-content">
+                <div class="chat-title-section">
+                    <span id="ai-chat-topic-title"></span>
+                    <span id="ai-chat-title-edit"><input id="ai-chat-title-input" type="text" /></span>
+                    <span class="edit-icon" title="Edit title">✎</span>
+                </div>
+                <div class="custom-title-list"></div>
+                <hr class="sidebar-divider">
+                <div class="topic-input-div">
+                    <input class="topic-input" type="text" placeholder="Add new topic..." />
+                    <button class="add-topic-button">Add</button>
+                </div>
+                <div class="topic-list"></div>
             </div>
-            <hr class="sidebar-divider">
-            <div class="topic-list"></div>
         `;
         document.body.appendChild(sidebar);
+        // Set up edit icon handler
+        const editIcon = sidebar.querySelector('.edit-icon');
+        if (editIcon) {
+            editIcon.onclick = showTitleEditInput;
+        }
+        // Set up topic input handler
+        const input = sidebar.querySelector('.topic-input');
+        const button = sidebar.querySelector('.add-topic-button');
+        if (input && button) {
+            button.onclick = () => {
+                const name = input.value.trim();
+                if (!name) return;
+                const conversationId = getConversationIdFromUrl();
+                if (!conversationId) return;
+                getTopicsForConversation(conversationId, (topics) => {
+                    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+                    topics.push({ id, name });
+                    setTopicsForConversation(conversationId, topics, () => {
+                        input.value = '';
+                        renderTopicList();
+                    });
+                });
+            };
+        }
+        // Set up ball toggle
+        sidebar.onclick = (e) => {
+            if (sidebar.classList.contains('ball') && e.target.closest('.ball-icon')) {
+                sidebar.classList.remove('ball');
+                browser.storage.local.set({ sidebarState: 'expanded' });
+            }
+        };
+        // Load saved state and position
+        browser.storage.local.get(['sidebarState', 'sidebarPosition'], (result) => {
+            if (result.sidebarState === 'expanded') {
+                sidebar.classList.remove('ball');
+            }
+            if (result.sidebarPosition) {
+                sidebar.style.top = result.sidebarPosition.top || '4rem';
+                sidebar.style.left = result.sidebarPosition.left || 'auto';
+                sidebar.style.right = result.sidebarPosition.right || '4rem';
+            } else {
+                sidebar.style.top = '4rem';
+                sidebar.style.right = '4rem';
+            }
+        });
+        // Make draggable
+        makeDraggable(sidebar);
     }
     return sidebar;
 }
 
-// --- Chat Title Renaming and Topic Isolation ---
+// --- Draggable Functionality ---
+function makeDraggable(element) {
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
 
-// Utility to get/set custom chat title in chrome.storage.local
+    element.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.topic-input, .add-topic-button, .edit-icon, .topic-bookmark, .topic-select, #ai-chat-title-input, .delete-topic')) return;
+        initialX = e.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - element.offsetWidth));
+        initialY = e.clientY - parseFloat(element.style.top) || 64; // 64px = 4rem
+        isDragging = true;
+        element.style.cursor = 'grabbing';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (isDragging) {
+            e.preventDefault();
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+            // Constrain to viewport
+            const rect = element.getBoundingClientRect();
+            const maxX = window.innerWidth - rect.width;
+            const maxY = window.innerHeight - rect.height;
+            currentX = Math.max(0, Math.min(currentX, maxX));
+            currentY = Math.max(0, Math.min(currentY, maxY));
+            element.style.left = currentX + 'px';
+            element.style.top = currentY + 'px';
+            element.style.right = 'auto';
+            browser.storage.local.set({ sidebarPosition: { top: element.style.top, left: element.style.left, right: 'auto' } });
+        }
+    });
+
+    document.addEventListener('mouseup', () => {
+        isDragging = false;
+        element.style.cursor = 'grab';
+    });
+}
+
+// --- Chat Title Renaming ---
 function getCustomChatTitle(conversationId, callback) {
-    chrome.storage.local.get(['customChatTitles'], (result) => {
+    browser.storage.local.get(['customChatTitles'], (result) => {
         const titles = result.customChatTitles || {};
         callback(titles[conversationId] || null);
     });
 }
 
 function setCustomChatTitle(conversationId, title, callback) {
-    chrome.storage.local.get(['customChatTitles'], (result) => {
+    browser.storage.local.get(['customChatTitles'], (result) => {
         const titles = result.customChatTitles || {};
         titles[conversationId] = title;
-        chrome.storage.local.set({ customChatTitles: titles }, callback);
+        browser.storage.local.set({ customChatTitles: titles }, callback);
     });
 }
 
-function hasCustomChatTitle(conversationId, callback) {
-    chrome.storage.local.get(['customChatTitles'], (result) => {
-        const titles = result.customChatTitles || {};
-        callback(!!titles[conversationId]);
-    });
-}
-
-// --- SPA URL Change Detection ---
-let lastConversationId = getConversationIdFromUrl();
-function checkConversationChange() {
-    const currentId = getConversationIdFromUrl();
-    if (currentId !== lastConversationId) {
-        lastConversationId = currentId;
-        updateSidebar(); // update title, topic list, etc.
-    }
-}
-setInterval(checkConversationChange, 500); // Check every 500ms
-
-// Update all functions to use getConversationIdFromUrl() instead of conversationId
 function updateSidebarTitle() {
     const conversationId = getConversationIdFromUrl();
+    if (!conversationId) return;
     const sidebar = ensureSidebar();
     const titleSpan = sidebar.querySelector('#ai-chat-topic-title');
     if (titleSpan) {
@@ -165,6 +213,7 @@ function updateSidebarTitle() {
 
 function showTitleEditInput() {
     const conversationId = getConversationIdFromUrl();
+    if (!conversationId) return;
     const sidebar = ensureSidebar();
     const titleSpan = sidebar.querySelector('#ai-chat-topic-title');
     const editSpan = sidebar.querySelector('#ai-chat-title-edit');
@@ -177,17 +226,15 @@ function showTitleEditInput() {
         input.select();
         input.onblur = saveTitleEdit;
         input.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                saveTitleEdit();
-            } else if (e.key === 'Escape') {
-                cancelTitleEdit();
-            }
+            if (e.key === 'Enter') saveTitleEdit();
+            else if (e.key === 'Escape') cancelTitleEdit();
         };
     }
 }
 
 function saveTitleEdit() {
     const conversationId = getConversationIdFromUrl();
+    if (!conversationId) return;
     const sidebar = ensureSidebar();
     const titleSpan = sidebar.querySelector('#ai-chat-topic-title');
     const editSpan = sidebar.querySelector('#ai-chat-title-edit');
@@ -198,6 +245,7 @@ function saveTitleEdit() {
             titleSpan.textContent = newTitle;
             titleSpan.style.display = '';
             editSpan.style.display = 'none';
+            renderCustomTitleList();
         });
     }
 }
@@ -212,63 +260,165 @@ function cancelTitleEdit() {
     }
 }
 
-// Add click event for renaming
-function setupTitleRenameHandler() {
-    const sidebar = ensureSidebar();
-    const titleSpan = sidebar.querySelector('#ai-chat-topic-title');
-    if (titleSpan) {
-        titleSpan.onclick = showTitleEditInput;
+// --- SPA URL Change Detection ---
+function observeUrlChanges() {
+    let lastUrl = window.location.href;
+    const checkUrl = () => {
+        if (window.location.href !== lastUrl) {
+            lastUrl = window.location.href;
+            debouncedUpdateSidebar();
+        }
+    };
+    // Observe title changes
+    const title = document.querySelector('title');
+    if (title) {
+        const observer = new MutationObserver(checkUrl);
+        observer.observe(title, { childList: true, characterData: true, subtree: true });
     }
+    // Listen for popstate
+    window.addEventListener('popstate', checkUrl);
+    // Fallback: periodic check
+    setInterval(checkUrl, 1000);
 }
 
-// Observe chat title changes and update sidebar
-function observeChatTitle() {
-    const main = document.querySelector('main');
-    if (!main) return;
-    const titleNode = main.querySelector('h1, h2');
-    if (!titleNode) return;
-    const observer = new MutationObserver(() => {
-        updateSidebarTitle();
-    });
-    observer.observe(titleNode, { childList: true, subtree: true, characterData: true });
+// --- Debounced Sidebar Update ---
+let updateTimeout = null;
+function debouncedUpdateSidebar() {
+    clearTimeout(updateTimeout);
+    updateTimeout = setTimeout(() => {
+        extractMessagesFromDOM(); // Ensure messages are updated
+        updateSidebar();
+    }, 500); // Wait for DOM to settle
 }
 
-// --- Topic Isolation Preparation ---
-// Utility to get/set topics per conversation (future-proofed)
+// --- Topic Management ---
 function getTopicsForConversation(conversationId, callback) {
-    chrome.storage.local.get(['topicsByConversation'], (result) => {
+    browser.storage.local.get(['topicsByConversation'], (result) => {
         const allTopics = result.topicsByConversation || {};
         callback(allTopics[conversationId] || []);
     });
 }
 
 function setTopicsForConversation(conversationId, topics, callback) {
-    chrome.storage.local.get(['topicsByConversation'], (result) => {
+    browser.storage.local.get(['topicsByConversation'], (result) => {
         const allTopics = result.topicsByConversation || {};
         allTopics[conversationId] = topics;
-        chrome.storage.local.set({ topicsByConversation: allTopics }, callback);
+        browser.storage.local.set({ topicsByConversation: allTopics }, callback);
     });
 }
 
-// --- Topic List Rendering and Current Topic Highlight ---
+function deleteTopic(conversationId, topicId, callback) {
+    getTopicsForConversation(conversationId, (topics) => {
+        const updatedTopics = topics.filter(t => t.id !== topicId);
+        // Remove topicId from bookmarks
+        browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
+            const allBookmarks = result.messageBookmarksByConversation || {};
+            const bookmarks = allBookmarks[conversationId] || {};
+            Object.keys(bookmarks).forEach(msgId => {
+                if (bookmarks[msgId].topicId === topicId) {
+                    delete bookmarks[msgId].topicId;
+                }
+            });
+            allBookmarks[conversationId] = bookmarks;
+            browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
+                setTopicsForConversation(conversationId, updatedTopics, callback);
+            });
+        });
+    });
+}
 
 function renderTopicList() {
     const conversationId = getConversationIdFromUrl();
+    if (!conversationId) return;
     const sidebar = ensureSidebar();
     const topicListDiv = sidebar.querySelector('.topic-list');
     if (!topicListDiv) return;
     getTopicsForConversation(conversationId, (topics) => {
-        chrome.storage.local.get(['currentTopicByConversation'], (result) => {
+        browser.storage.local.get(['currentTopicByConversation'], (result) => {
             const currentTopicByConversation = result.currentTopicByConversation || {};
             const currentTopicId = currentTopicByConversation[conversationId] || null;
             topicListDiv.innerHTML = '';
-            topics.forEach(topic => {
-                const topicDiv = document.createElement('div');
-                topicDiv.className = 'topic-item' + (topic.id === currentTopicId ? ' current' : '');
-                topicDiv.textContent = topic.name;
-                topicDiv.title = topic.name;
-                topicDiv.onclick = () => setCurrentTopic(topic.id);
-                topicListDiv.appendChild(topicDiv);
+            
+            // Create a "No Topic" section for unassigned bookmarks
+            const noTopicBookmarks = [];
+            const topicBookmarks = {};
+
+            // Organize bookmarks by topic
+            browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
+                const allBookmarks = result.messageBookmarksByConversation || {};
+                const bookmarks = allBookmarks[conversationId] || {};
+                Object.entries(bookmarks).forEach(([msgId, bm]) => {
+                    if (!bm.topicId) {
+                        noTopicBookmarks.push({ msgId, ...bm });
+                    } else {
+                        if (!topicBookmarks[bm.topicId]) topicBookmarks[bm.topicId] = [];
+                        topicBookmarks[bm.topicId].push({ msgId, ...bm });
+                    }
+                });
+
+                // Render "No Topic" section if there are unassigned bookmarks
+                if (noTopicBookmarks.length) {
+                    const noTopicDiv = document.createElement('div');
+                    noTopicDiv.className = 'topic-item no-topic' + (currentTopicId === null ? ' current' : '');
+                    noTopicDiv.textContent = 'No Topic';
+                    noTopicDiv.onclick = () => setCurrentTopic(null);
+                    topicListDiv.appendChild(noTopicDiv);
+
+                    noTopicBookmarks.forEach(bm => {
+                        const bmDiv = document.createElement('div');
+                        bmDiv.className = 'bookmark-list-item';
+                        bmDiv.textContent = bm.name;
+                        bmDiv.onclick = () => {
+                            const msgNode = document.querySelector(`[data-message-id="${bm.msgId}"]`);
+                            if (msgNode) msgNode.scrollIntoView({ behavior: 'smooth' });
+                        };
+                        topicListDiv.appendChild(bmDiv);
+                    });
+                }
+
+                // Render each topic and its bookmarks
+                topics.forEach(topic => {
+                    const topicWrapper = document.createElement('div');
+                    topicWrapper.className = 'topic-wrapper';
+
+                    const topicDiv = document.createElement('div');
+                    topicDiv.className = 'topic-item' + (topic.id === currentTopicId ? ' current' : '');
+                    const topicName = document.createElement('span');
+                    topicName.textContent = topic.name;
+                    topicName.title = topic.name;
+                    topicDiv.appendChild(topicName);
+
+                    const deleteBtn = document.createElement('span');
+                    deleteBtn.className = 'delete-topic';
+                    deleteBtn.textContent = '🗑️';
+                    deleteBtn.title = 'Delete topic';
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        deleteTopic(conversationId, topic.id, () => {
+                            renderTopicList();
+                            renderUserMessageBookmarks();
+                        });
+                    };
+                    topicDiv.appendChild(deleteBtn);
+
+                    topicDiv.onclick = () => setCurrentTopic(topic.id);
+                    topicWrapper.appendChild(topicDiv);
+
+                    // Render bookmarks for this topic
+                    const bookmarksForTopic = topicBookmarks[topic.id] || [];
+                    bookmarksForTopic.forEach(bm => {
+                        const bmDiv = document.createElement('div');
+                        bmDiv.className = 'bookmark-list-item';
+                        bmDiv.textContent = bm.name;
+                        bmDiv.onclick = () => {
+                            const msgNode = document.querySelector(`[data-message-id="${bm.msgId}"]`);
+                            if (msgNode) msgNode.scrollIntoView({ behavior: 'smooth' });
+                        };
+                        topicWrapper.appendChild(bmDiv);
+                    });
+
+                    topicListDiv.appendChild(topicWrapper);
+                });
             });
         });
     });
@@ -276,56 +426,170 @@ function renderTopicList() {
 
 function setCurrentTopic(topicId) {
     const conversationId = getConversationIdFromUrl();
-    chrome.storage.local.get(['currentTopicByConversation'], (result) => {
+    if (!conversationId) return;
+    browser.storage.local.get(['currentTopicByConversation'], (result) => {
         const currentTopicByConversation = result.currentTopicByConversation || {};
         currentTopicByConversation[conversationId] = topicId;
-        chrome.storage.local.set({ currentTopicByConversation }, () => {
-            renderTopicList();
-        });
+        browser.storage.local.set({ currentTopicByConversation }, renderTopicList);
     });
 }
 
-// --- Add/Edit Icon for Chat Title ---
-function ensureEditIcon() {
-    const sidebar = ensureSidebar();
-    let editIcon = sidebar.querySelector('.edit-icon');
-    if (!editIcon) {
-        editIcon = document.createElement('span');
-        editIcon.className = 'edit-icon';
-        editIcon.title = 'Edit title';
-        editIcon.innerHTML = '&#9998;'; // Unicode pencil
-        const titleSection = sidebar.querySelector('.chat-title-section');
-        if (titleSection) {
-            titleSection.appendChild(editIcon);
-        }
+// --- Bookmark Management ---
+function renderUserMessageBookmarks() {
+    document.querySelectorAll('.bookmark-bar').forEach(bar => bar.remove());
+    const conversationId = getConversationIdFromUrl();
+    if (!conversationId) return;
+    let retries = 0;
+    const maxRetries = 3;
+    function tryRender() {
+        getTopicsForConversation(conversationId, (topics) => {
+            browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
+                const allBookmarks = result.messageBookmarksByConversation || {};
+                const bookmarks = allBookmarks[conversationId] || {};
+                const messageNodes = document.querySelectorAll('[data-message-id][data-message-author-role="user"]');
+                if (!messageNodes.length && retries < maxRetries) {
+                    retries++;
+                    setTimeout(tryRender, 500);
+                    return;
+                }
+                messageNodes.forEach(msgNode => {
+                    const messageId = msgNode.getAttribute('data-message-id');
+                    msgNode.querySelectorAll('.bookmark-bar').forEach(bar => bar.remove());
+                    let bar = document.createElement('div');
+                    bar.className = 'bookmark-bar';
+                    msgNode.insertBefore(bar, msgNode.firstChild);
+                    if (bookmarks[messageId]) {
+                        const icon = document.createElement('span');
+                        icon.className = 'topic-bookmark assigned';
+                        icon.title = 'Edit bookmark';
+                        icon.innerHTML = '✎';
+                        bar.appendChild(icon);
+                        const label = document.createElement('span');
+                        label.className = 'bookmark-label';
+                        label.textContent = bookmarks[messageId].name;
+                        bar.appendChild(label);
+                        const topicSelect = document.createElement('select');
+                        topicSelect.className = 'topic-select';
+                        topicSelect.innerHTML = '<option value="">No Topic</option>' + 
+                            topics.map(t => `<option value="${t.id}" ${t.id === bookmarks[messageId].topicId ? 'selected' : ''}>${t.name}</option>`).join('');
+                        bar.appendChild(topicSelect);
+                        icon.onclick = () => showBookmarkInput(bar, messageId, bookmarks[messageId].name, topics, bookmarks[messageId].topicId);
+                        topicSelect.onchange = () => {
+                            const topicId = topicSelect.value;
+                            browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
+                                const allBookmarks = result.messageBookmarksByConversation || {};
+                                if (!allBookmarks[conversationId]) allBookmarks[conversationId] = {};
+                                allBookmarks[conversationId][messageId].topicId = topicId || undefined;
+                                browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
+                                    renderTopicList();
+                                });
+                            });
+                        };
+                    } else {
+                        const icon = document.createElement('span');
+                        icon.className = 'topic-bookmark';
+                        icon.title = 'Add bookmark';
+                        icon.innerHTML = '🔖';
+                        bar.appendChild(icon);
+                        icon.onclick = () => showBookmarkInput(bar, messageId, '', topics);
+                    }
+                });
+            });
+        });
     }
-    editIcon.onclick = showTitleEditInput;
+    tryRender();
 }
 
-// Update sidebar rendering hooks
+function showBookmarkInput(bar, messageId, currentName, topics, currentTopicId) {
+    bar.innerHTML = '';
+    const input = document.createElement('input');
+    input.className = 'topic-input-inline';
+    input.type = 'text';
+    input.placeholder = 'Bookmark name...';
+    input.value = currentName;
+    bar.appendChild(input);
+    const topicSelect = document.createElement('select');
+    topicSelect.className = 'topic-select';
+    topicSelect.innerHTML = '<option value="">No Topic</option>' + 
+        topics.map(t => `<option value="${t.id}" ${t.id === currentTopicId ? 'selected' : ''}>${t.name}</option>`).join('');
+    bar.appendChild(topicSelect);
+    input.focus();
+    function save() {
+        const name = input.value.trim();
+        const topicId = topicSelect.value;
+        const conversationId = getConversationIdFromUrl();
+        if (!conversationId) return;
+        browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
+            const allBookmarks = result.messageBookmarksByConversation || {};
+            if (!allBookmarks[conversationId]) allBookmarks[conversationId] = {};
+            if (name) {
+                allBookmarks[conversationId][messageId] = { name, topicId: topicId || undefined };
+            } else {
+                delete allBookmarks[conversationId][messageId];
+            }
+            browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
+                renderUserMessageBookmarks();
+                renderTopicList();
+            });
+        });
+    }
+    input.onkeydown = (e) => {
+        if (e.key === 'Enter') save();
+        else if (e.key === 'Escape') renderUserMessageBookmarks();
+    };
+    input.onblur = save;
+}
+
+// --- Custom Title List ---
+function renderCustomTitleList() {
+    const sidebar = ensureSidebar();
+    const customTitleListDiv = sidebar.querySelector('.custom-title-list');
+    if (!customTitleListDiv) return;
+    const currentId = getConversationIdFromUrl();
+    browser.storage.local.get(['customChatTitles'], (result) => {
+        const titles = result.customChatTitles || {};
+        customTitleListDiv.innerHTML = '';
+        Object.entries(titles).forEach(([convId, title]) => {
+            const item = document.createElement('div');
+            item.className = 'custom-title-item' + (convId === currentId ? ' current' : '');
+            item.textContent = title;
+            item.title = title;
+            item.onclick = () => {
+                if (convId !== currentId) {
+                    window.location.href = `/c/${convId}`;
+                }
+            };
+            customTitleListDiv.appendChild(item);
+        });
+        customTitleListDiv.style.display = Object.keys(titles).length ? '' : 'none';
+    });
+}
+
+// --- Update Sidebar ---
 function updateSidebar() {
     updateSidebarTitle();
+    renderCustomTitleList();
     renderTopicList();
-    ensureEditIcon();
+    renderUserMessageBookmarks();
 }
 
-// Initial sidebar injection and update
-window.addEventListener('load', () => {
-    setTimeout(() => {
-        ensureSidebar();
-        updateSidebar();
-        setupTitleRenameHandler();
-        observeChatTitle();
-    }, 2000);
-});
+// --- Initialize Extension ---
+function init() {
+    let retries = 0;
+    const maxRetries = 5;
+    function tryInit() {
+        const chatContainer = document.querySelector('main') || document.querySelector('[role="main"]');
+        if (chatContainer || retries >= maxRetries) {
+            ensureSidebar();
+            updateSidebar();
+            observeChatContainer();
+            observeUrlChanges();
+        } else {
+            retries++;
+            setTimeout(tryInit, 1000);
+        }
+    }
+    setTimeout(tryInit, 1000);
+}
 
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(() => {
-        ensureSidebar();
-        updateSidebar();
-        setupTitleRenameHandler();
-        observeChatTitle();
-    }, 2000);
-});
-
-// --- All legacy mapping, polling, and injection logic has been removed. ---
+window.addEventListener('load', init);

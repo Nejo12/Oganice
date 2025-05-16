@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI Chat Topic Manager",
   "version": "1.0",
-  "description": "Manage and organize your AI chat conversations by topics",
+  "description": "Enhances AI chat with topic management, custom titles, and message bookmarks.",
   "permissions": [
     "storage",
     "activeTab"
@@ -21,6 +21,8 @@
   "content_scripts": [
     {
       "matches": [
+        "*://*.grok.com/*",
+        "*://*.x.ai/*",
         "https://chat.openai.com/*",
         "https://chatgpt.com/*"
       ],
