@@ -31,6 +31,12 @@
       "run_at": "document_end"
     }
   ],
+  "browser_specific_settings": {
+        "gecko": {
+            "id": "ai-chat-topic-manager@extension",
+            "strict_min_version": "91.0"
+        }
+    },
   "background": {
     "service_worker": "background.js",
     "type": "module"

@@ -1,9 +1,10 @@
 :root {
-    --bg-primary: rgba(30, 30, 30, 0.5);
-    --bg-secondary: rgba(40, 40, 40, 0.4);
+    --bg-primary: rgba(30, 30, 30, 0.15); /* More transparent for glass effect */
+    --bg-secondary: rgba(40, 40, 40, 0.1); /* Even more transparent for secondary elements */
     --text-color: #fff;
-    --border-color: rgba(255, 255, 255, 0.2);
-    --shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+    --border-color: rgba(255, 255, 255, 0.3); /* Slightly brighter for glass edge */
+    --shadow: 0 6px 40px rgba(0, 0, 0, 0.2); /* Softer, larger shadow */
+    --highlight-color: rgba(255, 255, 255, 0.15); /* Subtle highlight for glass edge */
     --bookmark-color: #2ecc71;
     --edit-color: #B8860B;
     --trash-color: #FF0000;
@@ -11,11 +12,12 @@
 }
 
 [data-theme="light"] {
-    --bg-primary: rgba(240, 240, 240, 0.5);
-    --bg-secondary: rgba(230, 230, 230, 0.4);
+    --bg-primary: rgba(255, 255, 255, 0.2); /* Slightly tinted white for light theme */
+    --bg-secondary: rgba(230, 230, 230, 0.15);
     --text-color: #333;
-    --border-color: rgba(0, 0, 0, 0.2);
-    --shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    --border-color: rgba(0, 0, 0, 0.15);
+    --shadow: 0 6px 40px rgba(0, 0, 0, 0.1);
+    --highlight-color: rgba(0, 0, 0, 0.05);
     --bookmark-color: #2ecc71;
     --edit-color: #B8860B;
     --trash-color: #FF0000;
@@ -24,20 +26,21 @@
 
 .topic-manager {
     position: fixed;
-    top: 4rem;
-    right: 4rem;
-    width: 60px;
-    height: 60px;
+    top: 2rem;
+    right: 2rem;
+    width: 50px;
+    height: 50px;
     background: var(--bg-primary);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(2.5px); /* Increased blur for stronger glass effect */
     border-radius: 50%;
     padding: 0;
     box-shadow: var(--shadow);
     border: 1px solid var(--border-color);
+    box-shadow: inset 0 0 10px var(--highlight-color); /* Inner glow for glass */
     z-index: 1000;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     color: var(--text-color);
-    transition: all 0.3s ease; /* Smooth transition for all properties */
+    transition: all 0.3s ease;
     cursor: grab;
 }
 
@@ -55,26 +58,30 @@
     justify-content: center;
     width: 100%;
     height: 100%;
-    font-size: 24px;
+    font-size: 20px;
     opacity: 0.7;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent; /* Prevent tap highlight on mobile */
 }
 
-.topic-manager.ball:hover .ball-icon {
+.topic-manager.ball:hover .ball-icon,
+.topic-manager.ball:active .ball-icon {
     opacity: 1;
 }
 
 .topic-manager:not(.ball) {
-    width: auto;
+    width: 80vw; /* Responsive width for mobile */
+    max-width: 300px; /* Max width for larger screens */
     height: auto;
-    max-height: 80vh;
+    max-height: 70vh;
     border-radius: 12px;
-    padding: 15px;
+    padding: 10px;
     overflow-y: auto;
     background: var(--bg-primary);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(2.5px); /* Stronger blur for glass effect */
     box-shadow: var(--shadow);
     border: 1px solid var(--border-color);
+    box-shadow: inset 0 0 10px var(--highlight-color); /* Inner glow */
 }
 
 .topic-manager:not(.ball) .ball-icon {
@@ -89,17 +96,18 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 #ai-chat-topic-title {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     cursor: default;
     flex-grow: 1;
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--text-color);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2); /* Subtle text shadow for depth */
 }
 
 #ai-chat-title-edit {
@@ -112,81 +120,101 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--bg-secondary);
+    backdrop-filter: blur(3.5px); /* Glass effect for input */
     color: var(--text-color);
+    font-size: 14px;
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
 .edit-icon {
     cursor: pointer;
-    font-size: 14px;
+    font-size: 16px;
     opacity: 0.7;
     color: var(--edit-color);
+    padding: 4px;
 }
 
-.edit-icon:hover {
+.edit-icon:hover,
+.edit-icon:active {
     opacity: 1;
 }
 
 .close-icon {
     cursor: pointer;
-    font-size: 12px;
+    font-size: 16px;
     opacity: 0.7;
     color: var(--close-color);
+    padding: 4px;
 }
 
-.close-icon:hover {
+.close-icon:hover,
+.close-icon:active {
     opacity: 1;
 }
 
 .theme-toggle {
-    margin: 0 1rem;
+    margin-bottom: 8px;
 }
 
 #theme-switch {
-    background: transparent;
+    padding: 4px 8px;
+    background: var(--bg-secondary);
+    backdrop-filter: blur(3.5px);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
     color: var(--text-color);
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 16px;
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
-#theme-switch:hover {
+#theme-switch:hover,
+#theme-switch:active {
     background: var(--bg-primary);
+    box-shadow: inset 0 0 8px var(--highlight-color);
 }
 
 .sidebar-divider {
     border: 0;
     height: 1px;
     background: var(--border-color);
-    margin: 10px 0;
+    margin: 8px 0;
 }
 
 .custom-title-list {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .custom-title-item {
     padding: 6px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--text-color);
+    background: var(--bg-secondary);
+    backdrop-filter: blur(3.5px);
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
-.custom-title-item:hover {
-    background: var(--bg-secondary);
+.custom-title-item:hover,
+.custom-title-item:active {
+    background: var(--bg-primary);
+    box-shadow: inset 0 0 8px var(--highlight-color);
 }
 
 .custom-title-item.current {
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     font-weight: 600;
+    box-shadow: inset 0 0 8px var(--highlight-color);
 }
 
 .topic-input-div {
     display: flex;
     gap: 5px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .topic-input {
@@ -195,20 +223,28 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--bg-secondary);
+    backdrop-filter: blur(3.5px);
     color: var(--text-color);
+    font-size: 13px;
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
 .add-topic-button {
     padding: 6px 10px;
     background: var(--bg-secondary);
+    backdrop-filter: blur(5px);
     border: none;
     border-radius: 4px;
     color: var(--text-color);
     cursor: pointer;
+    font-size: 13px;
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
-.add-topic-button:hover {
+.add-topic-button:hover,
+.add-topic-button:active {
     background: var(--bg-primary);
+    box-shadow: inset 0 0 8px var(--highlight-color);
 }
 
 .topic-list {
@@ -230,22 +266,28 @@
     padding: 6px;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     color: var(--text-color);
     font-weight: 700;
     text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+    background: var(--bg-secondary);
+    backdrop-filter: blur(15px);
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
-.topic-item:hover {
-    background: var(--bg-secondary);
+.topic-item:hover,
+.topic-item:active {
+    background: var(--bg-primary);
+    box-shadow: inset 0 0 8px var(--highlight-color);
 }
 
 .topic-item.current {
-    background: var(--bg-secondary);
+    background: var(--bg-primary);
     font-weight: 700;
+    box-shadow: inset 0 0 8px var(--highlight-color);
 }
 
 .topic-item.no-topic {
@@ -254,28 +296,36 @@
 
 .delete-topic {
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
     opacity: 0.7;
     color: var(--trash-color) !important;
+    padding: 4px;
 }
 
-.delete-topic:hover {
+.delete-topic:hover,
+.delete-topic:active {
     opacity: 1;
 }
 
 .bookmark-list-item {
     padding: 4px 6px 4px 20px;
-    font-size: 13px;
+    border-radius: 4px;
+    font-size: 12px;
     cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    max-width: 360px;
+    max-width: 90%;
     color: var(--text-color);
+    background: var(--bg-secondary);
+    backdrop-filter: blur(15px);
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
-.bookmark-list-item:hover {
-    background: var(--bg-secondary);
+.bookmark-list-item:hover,
+.bookmark-list-item:active {
+    background: var(--bg-primary);
+    box-shadow: inset 0 0 8px var(--highlight-color);
 }
 
 .bookmark-bar {
@@ -284,7 +334,10 @@
     gap: 5px;
     margin-bottom: 4px;
     padding: 2px 4px;
-    background: transparent;
+    border-radius: 4px;
+    background: var(--bg-secondary);
+    backdrop-filter: blur(15px);
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
 .topic-bookmark {
@@ -298,7 +351,8 @@
     animation: bounce 1.5s infinite ease-in-out;
 }
 
-.topic-bookmark:hover {
+.topic-bookmark:hover,
+.topic-bookmark:active {
     opacity: 1;
 }
 
@@ -309,6 +363,7 @@
 .bookmark-label {
     font-size: 12px;
     color: var(--text-color);
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
 }
 
 .topic-input-inline {
@@ -317,7 +372,10 @@
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: var(--bg-secondary);
+    backdrop-filter: blur(15px);
     color: var(--text-color);
+    font-size: 12px;
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
 .topic-select {
@@ -325,13 +383,14 @@
     border: 1px solid var(--border-color);
     border-radius: 50%;
     background: var(--bg-secondary);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(15px);
     color: var(--text-color);
     font-size: 12px;
     transition: border-radius 0.3s ease, width 0.3s ease;
     width: 24px;
     overflow: hidden;
     appearance: none;
+    box-shadow: inset 0 0 5px var(--highlight-color);
 }
 
 .topic-select:focus,
@@ -343,4 +402,54 @@
 @keyframes bounce {
     0%, 100% { transform: translateY(0); }
     50% { transform: translateY(-3px); }
+}
+
+/* Media query for mobile devices */
+@media (max-width: 600px) {
+    .topic-manager {
+        top: 1rem;
+        right: 1rem;
+        width: 40px;
+        height: 40px;
+    }
+
+    .topic-manager.ball .ball-icon {
+        font-size: 18px;
+    }
+
+    .topic-manager:not(.ball) {
+        width: 90vw;
+        max-width: 280px;
+        padding: 8px;
+    }
+
+    #ai-chat-topic-title {
+        font-size: 13px;
+    }
+
+    .edit-icon,
+    .close-icon,
+    .delete-topic {
+        font-size: 14px;
+        padding: 6px;
+    }
+
+    #theme-switch {
+        font-size: 14px;
+    }
+
+    .custom-title-item,
+    .topic-item,
+    .bookmark-list-item,
+    .topic-input,
+    .add-topic-button,
+    .topic-input-inline,
+    .topic-select {
+        font-size: 12px;
+    }
+
+    .topic-select:focus,
+    .topic-select:hover {
+        width: 100px;
+    }
 }

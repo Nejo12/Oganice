@@ -83,7 +83,7 @@ function ensureSidebar() {
                     <span class="edit-icon" title="Edit title">✎</span>
                     <div class="theme-toggle">
                     <button id="theme-switch">🌙</button>
-                    </div>
+                </div>
                     <span class="close-icon" title="Minimize">✕</span>
                 </div>
                 <div class="custom-title-list"></div>
@@ -107,7 +107,7 @@ function ensureSidebar() {
             closeIcon.onclick = () => {
                 sidebar.className = 'topic-manager ball';
                 browser.storage.local.set({ sidebarState: 'collapsed' }, () => {
-                    console.log('Sidebar collapsed');
+                    console.log('Sidebar collapsed via close icon');
                 });
             };
         }
@@ -153,15 +153,65 @@ function ensureSidebar() {
                 if (e.key === 'Enter') saveTopic();
             };
         }
-        // Set up ball toggle
-        sidebar.onclick = (e) => {
+        // Set up toggle handlers (click and touch for expand, double-click for collapse)
+        let lastTap = 0;
+        const doubleTapDelay = 300; // Delay for double-tap detection
+
+        sidebar.addEventListener('click', (e) => {
             if (sidebar.classList.contains('ball') && e.target.closest('.ball-icon')) {
                 sidebar.className = 'topic-manager'; // Remove 'ball' to expand
                 browser.storage.local.set({ sidebarState: 'expanded' }, () => {
-                    console.log('Sidebar expanded');
+                    console.log('Sidebar expanded via click');
                 });
             }
-        };
+        });
+
+        // Touch event for expanding (single tap)
+        sidebar.addEventListener('touchstart', (e) => {
+            if (sidebar.classList.contains('ball') && e.target.closest('.ball-icon')) {
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTap;
+                if (tapLength < doubleTapDelay && tapLength > 0) {
+                    // Prevent double-tap from triggering single tap
+                    e.preventDefault();
+                } else {
+                    sidebar.className = 'topic-manager'; // Remove 'ball' to expand
+                    browser.storage.local.set({ sidebarState: 'expanded' }, () => {
+                        console.log('Sidebar expanded via tap');
+                    });
+                }
+                lastTap = currentTime;
+            }
+        });
+
+        // Double-click or double-tap to collapse
+        const chatTitleSection = sidebar.querySelector('.chat-title-section');
+        if (chatTitleSection) {
+            chatTitleSection.addEventListener('dblclick', () => {
+                if (!sidebar.classList.contains('ball')) {
+                    sidebar.className = 'topic-manager ball';
+                    browser.storage.local.set({ sidebarState: 'collapsed' }, () => {
+                        console.log('Sidebar collapsed via double-click');
+                    });
+                }
+            });
+
+            // Double-tap for touch devices
+            chatTitleSection.addEventListener('touchstart', (e) => {
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTap;
+                if (tapLength < doubleTapDelay && tapLength > 0) {
+                    if (!sidebar.classList.contains('ball')) {
+                        sidebar.className = 'topic-manager ball';
+                        browser.storage.local.set({ sidebarState: 'collapsed' }, () => {
+                            console.log('Sidebar collapsed via double-tap');
+                        });
+                    }
+                }
+                lastTap = currentTime;
+            });
+        }
+
         // Load saved state and position
         browser.storage.local.get(['sidebarState', 'sidebarPosition'], (result) => {
             if (result.sidebarState === 'expanded') {
@@ -182,7 +232,7 @@ function ensureSidebar() {
     return sidebar;
 }
 
-// --- Draggable Functionality ---
+// --- Draggable Functionality (Mouse and Touch) ---
 function makeDraggable(element) {
     let isDragging = false;
     let currentX;
@@ -190,46 +240,69 @@ function makeDraggable(element) {
     let initialX;
     let initialY;
 
-    element.addEventListener('mousedown', (e) => {
+    // Mouse events
+    element.addEventListener('mousedown', startDragging);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', stopDragging);
+
+    // Touch events
+    element.addEventListener('touchstart', startDragging);
+    document.addEventListener('touchmove', drag);
+    document.addEventListener('touchend', stopDragging);
+
+    function startDragging(e) {
         if (e.target.closest('.topic-input, .add-topic-button, .edit-icon, .topic-bookmark, .topic-select, #ai-chat-title-input, .delete-topic, #theme-switch, .close-icon')) return;
-        initialX = e.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - element.offsetWidth));
-        initialY = e.clientY - parseFloat(element.style.top) || 64; // 64px = 4rem
+        e.preventDefault();
+        const rect = element.getBoundingClientRect();
+        if (e.type === 'mousedown') {
+            initialX = e.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - rect.width));
+            initialY = e.clientY - (parseFloat(element.style.top) || 32); // 32px = 2rem
+        } else if (e.type === 'touchstart') {
+            const touch = e.touches[0];
+            initialX = touch.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - rect.width));
+            initialY = touch.clientY - (parseFloat(element.style.top) || 32);
+        }
         isDragging = true;
         element.style.cursor = 'grabbing';
-    });
+    }
 
-    document.addEventListener('mousemove', (e) => {
-        if (isDragging) {
-            e.preventDefault();
+    function drag(e) {
+        if (!isDragging) return;
+        e.preventDefault();
+        const rect = element.getBoundingClientRect();
+        if (e.type === 'mousemove') {
             currentX = e.clientX - initialX;
             currentY = e.clientY - initialY;
-            // Constrain to viewport
-            const rect = element.getBoundingClientRect();
-            const maxX = window.innerWidth - rect.width;
-            const maxY = window.innerHeight - rect.height;
-            currentX = Math.max(0, Math.min(currentX, maxX));
-            currentY = Math.max(0, Math.min(currentY, maxY));
-
-            // Update both left and right based on position
-            if (currentX <= window.innerWidth / 2) {
-                element.style.left = currentX + 'px';
-                element.style.right = 'auto';
-            } else {
-                element.style.right = (window.innerWidth - (currentX + rect.width)) + 'px';
-                element.style.left = 'auto';
-            }
-            element.style.top = currentY + 'px';
-
-            browser.storage.local.set({ sidebarPosition: { top: element.style.top, left: element.style.left, right: element.style.right } }, () => {
-                console.log('Sidebar position updated');
-            });
+        } else if (e.type === 'touchmove') {
+            const touch = e.touches[0];
+            currentX = touch.clientX - initialX;
+            currentY = touch.clientY - initialY;
         }
-    });
+        // Constrain to viewport
+        const maxX = window.innerWidth - rect.width;
+        const maxY = window.innerHeight - rect.height;
+        currentX = Math.max(0, Math.min(currentX, maxX));
+        currentY = Math.max(0, Math.min(currentY, maxY));
 
-    document.addEventListener('mouseup', () => {
+        // Update both left and right based on position
+        if (currentX <= window.innerWidth / 2) {
+            element.style.left = currentX + 'px';
+            element.style.right = 'auto';
+        } else {
+            element.style.right = (window.innerWidth - (currentX + rect.width)) + 'px';
+            element.style.left = 'auto';
+        }
+        element.style.top = currentY + 'px';
+
+        browser.storage.local.set({ sidebarPosition: { top: element.style.top, left: element.style.left, right: element.style.right } }, () => {
+            console.log('Sidebar position updated');
+        });
+    }
+
+    function stopDragging() {
         isDragging = false;
         element.style.cursor = 'grab';
-    });
+    }
 }
 
 // --- Chat Title Renaming ---
@@ -415,7 +488,7 @@ function renderTopicList() {
                 if (noTopicBookmarks.length) {
                     const noTopicDiv = document.createElement('div');
                     noTopicDiv.className = 'topic-item no-topic' + (currentTopicId === null ? ' current' : '');
-                    noTopicDiv.textContent = 'untitled';
+                    noTopicDiv.textContent = 'Unassigned';
                     noTopicDiv.onclick = () => setCurrentTopic(null);
                     topicListDiv.appendChild(noTopicDiv);
 
