@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "AI Chat Topic Manager",
-  "version": "1.0",
+  "name": "Topic Manager",
+  "version": "1.0.0",
   "description": "Enhances AI chat with topic management, custom titles, and message bookmarks.",
   "permissions": [
     "storage",
