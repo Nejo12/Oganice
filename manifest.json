@@ -1,11 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Topic Manager",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Enhances AI chat with topic management, custom titles, and message bookmarks.",
   "permissions": [
-    "storage",
-    "activeTab"
+    "storage"
   ],
   "host_permissions": [
     "https://chat.openai.com/*"
@@ -21,10 +20,10 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.grok.com/*",
-        "*://*.x.ai/*",
-        "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
+        "*://*.grok.com/*/c/*",
+        "*://*.x.ai/*/c/*",
+        "https://chat.openai.com/c/*",
+        "https://chatgpt.com/c/*"
       ],
       "js": ["content.js"],
       "css": ["styles.css"],
@@ -32,14 +31,10 @@
     }
   ],
   "browser_specific_settings": {
-        "gecko": {
-            "id": "ai-chat-topic-manager@extension",
-            "strict_min_version": "91.0"
-        }
-    },
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
+    "gecko": {
+      "id": "ai-chat-topic-manager@extension",
+      "strict_min_version": "91.0"
+    }
   },
   "web_accessible_resources": [
     {
@@ -47,7 +42,12 @@
         "vendor/react-refresh.js",
         "vendor/*.js"
       ],
-      "matches": ["<all_urls>"]
+      "matches": [
+        "*://*.grok.com/*",
+        "*://*.x.ai/*",
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ]
     },
     {
       "resources": [
@@ -55,10 +55,11 @@
         "styles.css",
         "content.js",
         "popup.html",
-        "popup.js",
-        "background.js"
+        "popup.js"
       ],
-      "matches": ["https://chat.openai.com/*"]
+      "matches": [
+        "https://chat.openai.com/*"
+      ]
     }
   ],
   "icons": {
@@ -66,4 +67,4 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   }
-} 
+}
