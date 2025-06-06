@@ -4,10 +4,14 @@
   "version": "1.0.2",
   "description": "Enhances AI chat with topic management, custom titles, and message bookmarks.",
   "permissions": [
-    "storage"
+    "storage",
+    "tabs"
   ],
   "host_permissions": [
-    "https://chat.openai.com/*"
+    "https://chat.openai.com/*",
+    "*://*.grok.com/*",
+    "*://*.x.ai/*",
+    "https://chatgpt.com/*"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -16,6 +20,9 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {

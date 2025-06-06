@@ -1,338 +1,226 @@
-// Ensure cross-browser compatibility
-if (typeof browser === "undefined") {
-    var browser = chrome;
+// Cross-browser compatibility
+const browserAPI = typeof browser !== "undefined" ? browser : chrome;
+if (!browserAPI) {
+    console.error('[Topic Manager] Browser API (chrome or browser) not available. Extension will not function.');
 }
 
-// --- Utility to get conversation_id from URL ---
-function getConversationIdFromUrl() {
-    const match = window.location.pathname.match(/\/c\/([a-zA-Z0-9\-]+)/);
-    return match ? match[1] : null;
-}
+// Configuration constants
+const CONFIG = {
+    RETRY_LIMIT: 5,
+    RETRY_DELAY_MS: 1000,
+    DEBOUNCE_DELAY_MS: 300,
+    UPDATE_SIDEBAR_DEBOUNCE_MS: 500,
+    DRAG_DEBOUNCE_MS: 200,
+    DEFAULT_SIDEBAR_POSITION: { top: '4rem', right: '4rem', left: 'auto' },
+    SELECTORS: {
+        CHAT_CONTAINER: ['main', '[role="main"]', 'body'],
+        MESSAGE: '[data-message-id]',
+        CONTENT: '.whitespace-pre-wrap',
+        TITLE: ['h1', 'title', '[data-testid="conversation-turn-2"]', '.text-2xl', '.text-3xl', '.text-4xl'],
+    },
+    CLASS_NAMES: {
+        SIDEBAR: 'topic-manager',
+        BALL: 'ball',
+        BALL_ICON: 'ball-icon',
+        SIDEBAR_CONTENT: 'sidebar-content',
+        CHAT_TITLE_SECTION: 'chat-title-section',
+        THEME_TOGGLE: 'theme-toggle',
+        TOPIC_INPUT: 'topic-input',
+        ADD_TOPIC_BUTTON: 'add-topic-button',
+    },
+};
 
-// --- DOM-based Message Extraction (CSP-safe) ---
+// Storage utility
+const StorageUtils = {
+    getCustomChatTitles(callback) {
+        browserAPI.storage.local.get(['customChatTitles'], (result) => {
+            callback(result.customChatTitles || {});
+        });
+    },
+    setCustomChatTitle(conversationId, title, callback) {
+        this.getCustomChatTitles((titles) => {
+            titles[conversationId] = title;
+            browserAPI.storage.local.set({ customChatTitles: titles }, () => {
+                console.log(`Custom title "${title}" saved for conversation ${conversationId}`);
+                if (callback) callback();
+            });
+        });
+    },
+    getTopicsByConversation(callback) {
+        browserAPI.storage.local.get(['topicsByConversation'], (result) => {
+            callback(result.topicsByConversation || {});
+        });
+    },
+    setTopicsByConversation(conversationId, topics, callback) {
+        this.getTopicsByConversation((allTopics) => {
+            allTopics[conversationId] = topics;
+            browserAPI.storage.local.set({ topicsByConversation: allTopics }, () => {
+                console.log(`Topics updated for conversation ${conversationId}`);
+                if (callback) callback();
+            });
+        });
+    },
+    getBookmarksByConversation(callback) {
+        browserAPI.storage.local.get(['messageBookmarksByConversation'], (result) => {
+            callback(result.messageBookmarksByConversation || {});
+        });
+    },
+    setBookmarksByConversation(conversationId, bookmarks, callback) {
+        this.getBookmarksByConversation((allBookmarks) => {
+            allBookmarks[conversationId] = bookmarks;
+            browserAPI.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
+                console.log(`Bookmarks updated for conversation ${conversationId}`);
+                if (callback) callback();
+            });
+        });
+    },
+    getCurrentTopicByConversation(callback) {
+        browserAPI.storage.local.get(['currentTopicByConversation'], (result) => {
+            callback(result.currentTopicByConversation || {});
+        });
+    },
+    setCurrentTopicByConversation(conversationId, topicId, callback) {
+        this.getCurrentTopicByConversation((currentTopicByConversation) => {
+            currentTopicByConversation[conversationId] = topicId;
+            browserAPI.storage.local.set({ currentTopicByConversation }, () => {
+                console.log(`Current topic set to ${topicId} for conversation ${conversationId}`);
+                if (callback) callback();
+            });
+        });
+    },
+    getSettings(callback) {
+        browserAPI.storage.local.get(['autoTopic', 'topicPosition'], (result) => {
+            callback({
+                autoTopic: result.autoTopic || 'enabled',
+                topicPosition: result.topicPosition || 'right'
+            });
+        });
+    },
+};
+
+let currentConversationId = null;
 let domMessages = [];
 let lastMessageIds = [];
 let extractTimeout = null;
+let updateTimeout = null;
+let lastCustomTitleConversationId = null;
+let lastCustomTitleValue = null;
 
+// Utility to get conversation_id from URL
+function getConversationIdFromUrl() {
+    const match = window.location.pathname.match(/\/c\/([a-zA-Z0-9-]+)/);
+    return match ? match[1] : null;
+}
+
+// DOM-based Message Extraction
 function extractMessagesFromDOM() {
-    const messageNodes = document.querySelectorAll('[data-message-id]');
+    const messageNodes = document.querySelectorAll(CONFIG.SELECTORS.MESSAGE);
     const messages = [];
     const ids = [];
     messageNodes.forEach(node => {
-        const id = node.getAttribute('data-message-id');
+        const id = node?.getAttribute('data-message-id');
+        if (!id) return;
         ids.push(id);
         const author = node.getAttribute('data-message-author-role') || '';
-        const contentNode = node.querySelector('.whitespace-pre-wrap');
-        const content = contentNode ? contentNode.textContent : '';
-        messages.push({ id, author, content, node, conversationId: getConversationIdFromUrl() });
+        const contentNode = node.querySelector(CONFIG.SELECTORS.CONTENT);
+        const content = contentNode?.textContent || '';
+        const conversationId = getConversationIdFromUrl();
+        if (!conversationId) return;
+        messages.push({ id, author, content, node, conversationId });
     });
     if (ids.join(',') !== lastMessageIds.join(',')) {
         lastMessageIds = ids;
         domMessages = messages;
-        console.log('[AI Chat Topic Manager] DOM messages updated:', domMessages);
+        console.log('[Topic Manager] DOM messages updated:', domMessages);
     }
 }
 
 function debouncedExtractMessages() {
     clearTimeout(extractTimeout);
-    extractTimeout = setTimeout(extractMessagesFromDOM, 300);
+    extractTimeout = setTimeout(extractMessagesFromDOM, CONFIG.DEBOUNCE_DELAY_MS);
 }
 
-// --- Observe DOM for new messages ---
+// Observe DOM for new messages
 function observeChatContainer() {
-    const chatContainer = document.querySelector('main') || 
-        document.querySelector('[role="main"]') ||
-        document.body;
+    const chatContainer = CONFIG.SELECTORS.CHAT_CONTAINER
+        .map(selector => document.querySelector(selector))
+        .find(element => element) || document.body;
     if (chatContainer) {
         const observer = new MutationObserver(debouncedExtractMessages);
         observer.observe(chatContainer, { childList: true, subtree: true });
     }
 }
 
-// --- Sidebar Injection and Theme Management ---
+// Chat Title Management
 function getChatTitleFromDOM() {
-    const conversationId = getConversationIdFromUrl();
-    if (!conversationId) return 'Untitled Chat';
-    const sidebarLink = document.querySelector(`a[href*='c/${conversationId}']`);
-    if (sidebarLink) {
-        const historyItem = sidebarLink.closest('li[data-testid^="history-item"]');
-        if (historyItem) {
-            const growDiv = historyItem.querySelector('div.grow');
-            if (growDiv && growDiv.textContent.trim()) {
-                return growDiv.textContent.trim();
+    // Try to get the title from the left sidebar (ChatGPT conversation list)
+    const activeSidebarItem = document.querySelector('[aria-label="Chat history"] [data-testid="conversation-list"] [aria-current="page"], [aria-label="Chat history"] [data-testid="conversation-list"] .bg-token-sidebar-surface-primary');
+    if (activeSidebarItem) {
+        // Try to find the title text node inside the active item
+        const titleNode = activeSidebarItem.querySelector('div, span, p');
+        if (titleNode && titleNode.textContent.trim()) {
+            return titleNode.textContent.trim();
+        }
+    }
+
+    // Fallback to previous logic
+    const titleElement = CONFIG.SELECTORS.TITLE
+        .map(selector => document.querySelector(selector))
+        .find(element => element) || null;
+    
+    // If no title found, try to find the first user message as it often contains the title
+    if (!titleElement) {
+        const firstUserMessage = document.querySelector('[data-message-author-role="user"]');
+        if (firstUserMessage) {
+            const content = firstUserMessage.querySelector(CONFIG.SELECTORS.CONTENT);
+            if (content) {
+                return content.textContent.trim().split('\n')[0] || 'Untitled Chat';
             }
         }
     }
-    const titleNode = document.querySelector('.text-token-title') ||
-        document.querySelector('main h1, main h2') ||
-        document.querySelector('nav h1, nav h2');
-    return titleNode && titleNode.textContent.trim() ? titleNode.textContent.trim() : 'Untitled Chat';
+    
+    return titleElement?.textContent?.trim() || 'Untitled Chat';
 }
 
-function ensureSidebar() {
-    let sidebar = document.querySelector('.topic-manager');
-    if (!sidebar) {
-        sidebar = document.createElement('div');
-        sidebar.className = 'topic-manager ball';
-        sidebar.innerHTML = `
-            <div class="ball-icon">💬</div>
-            <div class="sidebar-content">
-                <div class="chat-title-section">
-                    <span id="ai-chat-topic-title"></span>
-                    <span id="ai-chat-title-edit"><input id="ai-chat-title-input" type="text" /></span>
-                    <span class="edit-icon" title="Edit title">✎</span>
-                    <div class="theme-toggle">
-                    <button id="theme-switch">🌙</button>
-                </div>
-                    <span class="close-icon" title="Minimize">✕</span>
-                </div>
-                <div class="custom-title-list"></div>
-                <hr class="sidebar-divider">
-                <div class="topic-input-div">
-                    <input class="topic-input" type="text" placeholder="Add new topic..." />
-                    <button class="add-topic-button">Add</button>
-                </div>
-                <div class="topic-list"></div>
-            </div>
-        `;
-        document.body.appendChild(sidebar);
-        // Set up edit icon handler
-        const editIcon = sidebar.querySelector('.edit-icon');
-        if (editIcon) {
-            editIcon.onclick = showTitleEditInput;
-        }
-        // Set up close icon handler
-        const closeIcon = sidebar.querySelector('.close-icon');
-        if (closeIcon) {
-            closeIcon.onclick = () => {
-                sidebar.className = 'topic-manager ball';
-                browser.storage.local.set({ sidebarState: 'collapsed' }, () => {
-                    console.log('Sidebar collapsed via close icon');
-                });
-            };
-        }
-        // Set up theme toggle
-        const themeSwitch = sidebar.querySelector('#theme-switch');
-        if (themeSwitch) {
-            browser.storage.local.get(['theme'], (result) => {
-                const theme = result.theme || 'dark';
-                document.body.setAttribute('data-theme', theme);
-                themeSwitch.textContent = theme === 'dark' ? '☀️' : '🌙';
-                themeSwitch.onclick = () => {
-                    const newTheme = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-                    document.body.setAttribute('data-theme', newTheme);
-                    themeSwitch.textContent = newTheme === 'dark' ? '☀️' : '🌙';
-                    browser.storage.local.set({ theme: newTheme }, () => {
-                        console.log(`Theme switched to ${newTheme}`);
-                    });
-                };
-            });
-        }
-        // Set up topic input handler
-        const input = sidebar.querySelector('.topic-input');
-        const button = sidebar.querySelector('.add-topic-button');
-        if (input && button) {
-            const saveTopic = () => {
-                const name = input.value.trim();
-                if (!name) return;
-                const conversationId = getConversationIdFromUrl();
-                if (!conversationId) return;
-                getTopicsForConversation(conversationId, (topics) => {
-                    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-                    topics.push({ id, name });
-                    setTopicsForConversation(conversationId, topics, () => {
-                        input.value = '';
-                        renderTopicList();
-                        console.log(`Topic "${name}" saved for conversation ${conversationId}`);
-                    });
-                });
-            };
-            button.onclick = saveTopic;
-            input.onblur = saveTopic;
-            input.onkeydown = (e) => {
-                if (e.key === 'Enter') saveTopic();
-            };
-        }
-        // Set up toggle handlers (click and touch for expand, double-click for collapse)
-        let lastTap = 0;
-        const doubleTapDelay = 300; // Delay for double-tap detection
-
-        sidebar.addEventListener('click', (e) => {
-            if (sidebar.classList.contains('ball') && e.target.closest('.ball-icon')) {
-                sidebar.className = 'topic-manager'; // Remove 'ball' to expand
-                browser.storage.local.set({ sidebarState: 'expanded' }, () => {
-                    console.log('Sidebar expanded via click');
-                });
-            }
+function updateCurrentChat() {
+    const newConversationId = getConversationIdFromUrl();
+    if (newConversationId && newConversationId !== currentConversationId) {
+        currentConversationId = newConversationId;
+        console.log('[Topic Manager] Chat changed:', currentConversationId);
+        browserAPI.runtime.sendMessage({
+            type: "CHAT_CHANGED",
+            conversationId: currentConversationId
         });
-
-        // Touch event for expanding (single tap)
-        sidebar.addEventListener('touchstart', (e) => {
-            if (sidebar.classList.contains('ball') && e.target.closest('.ball-icon')) {
-                const currentTime = new Date().getTime();
-                const tapLength = currentTime - lastTap;
-                if (tapLength < doubleTapDelay && tapLength > 0) {
-                    // Prevent double-tap from triggering single tap
-                    e.preventDefault();
-                } else {
-                    sidebar.className = 'topic-manager'; // Remove 'ball' to expand
-                    browser.storage.local.set({ sidebarState: 'expanded' }, () => {
-                        console.log('Sidebar expanded via tap');
-                    });
-                }
-                lastTap = currentTime;
-            }
-        });
-
-        // Double-click or double-tap to collapse
-        const chatTitleSection = sidebar.querySelector('.chat-title-section');
-        if (chatTitleSection) {
-            chatTitleSection.addEventListener('dblclick', () => {
-                if (!sidebar.classList.contains('ball')) {
-                    sidebar.className = 'topic-manager ball';
-                    browser.storage.local.set({ sidebarState: 'collapsed' }, () => {
-                        console.log('Sidebar collapsed via double-click');
-                    });
-                }
-            });
-
-            // Double-tap for touch devices
-            chatTitleSection.addEventListener('touchstart', (e) => {
-                const currentTime = new Date().getTime();
-                const tapLength = currentTime - lastTap;
-                if (tapLength < doubleTapDelay && tapLength > 0) {
-                    if (!sidebar.classList.contains('ball')) {
-                        sidebar.className = 'topic-manager ball';
-                        browser.storage.local.set({ sidebarState: 'collapsed' }, () => {
-                            console.log('Sidebar collapsed via double-tap');
-                        });
-                    }
-                }
-                lastTap = currentTime;
-            });
-        }
-
-        // Load saved state and position
-        browser.storage.local.get(['sidebarState', 'sidebarPosition'], (result) => {
-            if (result.sidebarState === 'expanded') {
-                sidebar.className = 'topic-manager';
-            }
-            if (result.sidebarPosition) {
-                sidebar.style.top = result.sidebarPosition.top || '4rem';
-                sidebar.style.left = result.sidebarPosition.left || 'auto';
-                sidebar.style.right = result.sidebarPosition.right || '4rem';
-            } else {
-                sidebar.style.top = '4rem';
-                sidebar.style.right = '4rem';
-            }
-        });
-        // Make draggable
-        makeDraggable(sidebar);
-    }
-    return sidebar;
-}
-
-// --- Draggable Functionality (Mouse and Touch) ---
-function makeDraggable(element) {
-    let isDragging = false;
-    let currentX;
-    let currentY;
-    let initialX;
-    let initialY;
-
-    // Mouse events
-    element.addEventListener('mousedown', startDragging);
-    document.addEventListener('mousemove', drag);
-    document.addEventListener('mouseup', stopDragging);
-
-    // Touch events
-    element.addEventListener('touchstart', startDragging);
-    document.addEventListener('touchmove', drag);
-    document.addEventListener('touchend', stopDragging);
-
-    function startDragging(e) {
-        if (e.target.closest('.topic-input, .add-topic-button, .edit-icon, .topic-bookmark, .topic-select, #ai-chat-title-input, .delete-topic, #theme-switch, .close-icon')) return;
-        e.preventDefault();
-        const rect = element.getBoundingClientRect();
-        if (e.type === 'mousedown') {
-            initialX = e.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - rect.width));
-            initialY = e.clientY - (parseFloat(element.style.top) || 32); // 32px = 2rem
-        } else if (e.type === 'touchstart') {
-            const touch = e.touches[0];
-            initialX = touch.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - rect.width));
-            initialY = touch.clientY - (parseFloat(element.style.top) || 32);
-        }
-        isDragging = true;
-        element.style.cursor = 'grabbing';
-    }
-
-    function drag(e) {
-        if (!isDragging) return;
-        e.preventDefault();
-        const rect = element.getBoundingClientRect();
-        if (e.type === 'mousemove') {
-            currentX = e.clientX - initialX;
-            currentY = e.clientY - initialY;
-        } else if (e.type === 'touchmove') {
-            const touch = e.touches[0];
-            currentX = touch.clientX - initialX;
-            currentY = touch.clientY - initialY;
-        }
-        // Constrain to viewport
-        const maxX = window.innerWidth - rect.width;
-        const maxY = window.innerHeight - rect.height;
-        currentX = Math.max(0, Math.min(currentX, maxX));
-        currentY = Math.max(0, Math.min(currentY, maxY));
-
-        // Update both left and right based on position
-        if (currentX <= window.innerWidth / 2) {
-            element.style.left = currentX + 'px';
-            element.style.right = 'auto';
-        } else {
-            element.style.right = (window.innerWidth - (currentX + rect.width)) + 'px';
-            element.style.left = 'auto';
-        }
-        element.style.top = currentY + 'px';
-
-        browser.storage.local.set({ sidebarPosition: { top: element.style.top, left: element.style.left, right: element.style.right } }, () => {
-            console.log('Sidebar position updated');
-        });
-    }
-
-    function stopDragging() {
-        isDragging = false;
-        element.style.cursor = 'grab';
+        // Ensure sidebar updates immediately after conversation change
+        updateSidebar();
     }
 }
 
-// --- Chat Title Renaming ---
 function getCustomChatTitle(conversationId, callback) {
-    browser.storage.local.get(['customChatTitles'], (result) => {
-        const titles = result.customChatTitles || {};
+    StorageUtils.getCustomChatTitles((titles) => {
         callback(titles[conversationId] || null);
     });
 }
 
 function setCustomChatTitle(conversationId, title, callback) {
-    browser.storage.local.get(['customChatTitles'], (result) => {
-        const titles = result.customChatTitles || {};
-        titles[conversationId] = title;
-        browser.storage.local.set({ customChatTitles: titles }, callback || (() => {
-            console.log(`Custom title "${title}" saved for conversation ${conversationId}`);
-        }));
-    });
+    StorageUtils.setCustomChatTitle(conversationId, title, callback);
 }
 
 function updateSidebarTitle() {
     const conversationId = getConversationIdFromUrl();
-    if (!conversationId) return;
+    if (!conversationId) {
+        // Silently return if no conversation is open
+        return;
+    }
     const sidebar = ensureSidebar();
     const titleSpan = sidebar.querySelector('#ai-chat-topic-title');
-    if (titleSpan) {
-        getCustomChatTitle(conversationId, (customTitle) => {
-            titleSpan.textContent = customTitle || getChatTitleFromDOM();
-        });
+    if (!titleSpan) {
+        console.error('[Topic Manager] Chat title element not found in sidebar');
+        return;
     }
+    getCustomChatTitle(conversationId, (customTitle) => {
+        titleSpan.textContent = customTitle || getChatTitleFromDOM();
+    });
 }
 
 function showTitleEditInput() {
@@ -367,6 +255,8 @@ function saveTitleEdit() {
         const newTitle = input.value.trim() || getChatTitleFromDOM();
         setCustomChatTitle(conversationId, newTitle, () => {
             titleSpan.textContent = newTitle;
+            lastCustomTitleConversationId = conversationId;
+            lastCustomTitleValue = newTitle;
             titleSpan.style.display = '';
             editSpan.style.display = 'none';
             renderCustomTitleList();
@@ -384,72 +274,318 @@ function cancelTitleEdit() {
     }
 }
 
-// --- SPA URL Change Detection ---
-function observeUrlChanges() {
-    let lastUrl = window.location.href;
-    const checkUrl = () => {
-        if (window.location.href !== lastUrl) {
-            lastUrl = window.location.href;
-            debouncedUpdateSidebar();
+// Sidebar Injection and Event Listeners
+function setupSidebarEventListeners(sidebar) {
+    const doubleTapDelay = CONFIG.DEBOUNCE_DELAY_MS;
+    let lastTap = 0;
+
+    const expandSidebar = () => {
+        sidebar.className = CONFIG.CLASS_NAMES.SIDEBAR;
+        browserAPI.storage.local.set({ sidebarState: 'expanded' }, () => {
+            console.log('Sidebar expanded via click/tap');
+        });
+    };
+
+    const ballIcon = sidebar.querySelector(`.${CONFIG.CLASS_NAMES.BALL_ICON}`);
+    if (ballIcon) {
+        sidebar.addEventListener('click', (e) => {
+            if (sidebar.classList.contains(CONFIG.CLASS_NAMES.BALL) && e.target.closest(`.${CONFIG.CLASS_NAMES.BALL_ICON}`)) {
+                expandSidebar();
+            }
+        });
+
+        sidebar.addEventListener('touchstart', (e) => {
+            if (sidebar.classList.contains(CONFIG.CLASS_NAMES.BALL) && e.target.closest(`.${CONFIG.CLASS_NAMES.BALL_ICON}`)) {
+                const currentTime = new Date().getTime();
+                const tapLength = currentTime - lastTap;
+                if (tapLength < doubleTapDelay && tapLength > 0) {
+                    e.preventDefault();
+                } else {
+                    expandSidebar();
+                }
+                lastTap = currentTime;
+            }
+        });
+    }
+
+    const collapseSidebar = () => {
+        if (!sidebar.classList.contains(CONFIG.CLASS_NAMES.BALL)) {
+            sidebar.className = `${CONFIG.CLASS_NAMES.SIDEBAR} ${CONFIG.CLASS_NAMES.BALL}`;
+            browserAPI.storage.local.set({ sidebarState: 'collapsed' }, () => {
+                console.log('Sidebar collapsed via double-click/tap');
+            });
         }
     };
-    // Observe title changes
-    const title = document.querySelector('title');
-    if (title) {
-        const observer = new MutationObserver(checkUrl);
-        observer.observe(title, { childList: true, characterData: true, subtree: true });
+
+    const chatTitleSection = sidebar.querySelector(`.${CONFIG.CLASS_NAMES.CHAT_TITLE_SECTION}`);
+    if (chatTitleSection) {
+        chatTitleSection.addEventListener('dblclick', collapseSidebar);
+        chatTitleSection.addEventListener('touchstart', (e) => {
+            const currentTime = new Date().getTime();
+            const tapLength = currentTime - lastTap;
+            if (tapLength < doubleTapDelay && tapLength > 0) {
+                collapseSidebar();
+            }
+            lastTap = currentTime;
+        });
     }
-    // Listen for popstate
-    window.addEventListener('popstate', checkUrl);
-    // Fallback: periodic check
-    setInterval(checkUrl, 1000);
+
+    const closeIcon = sidebar.querySelector('.close-icon');
+    if (closeIcon) {
+        closeIcon.addEventListener('click', () => {
+            sidebar.className = `${CONFIG.CLASS_NAMES.SIDEBAR} ${CONFIG.CLASS_NAMES.BALL}`;
+            browserAPI.storage.local.set({ sidebarState: 'collapsed' }, () => {
+                console.log('Sidebar collapsed via close icon');
+            });
+        });
+    }
+
+    const themeSwitch = sidebar.querySelector('#theme-switch');
+    if (themeSwitch) {
+        const sunIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/><line x1="3.22" y1="3.22" x2="4.64" y2="4.64"/><line x1="11.36" y1="11.36" x2="12.78" y2="12.78"/><line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/><line x1="3.22" y1="12.78" x2="4.64" y2="11.36"/><line x1="11.36" y1="4.64" x2="12.78" y2="3.22"/></svg>`;
+const moonIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"><path d="M15 13A6 6 0 1 1 9 3a5 5 0 0 0 6 10z"/></svg>`;
+        function setThemeIcon(theme) {
+            themeSwitch.innerHTML = theme === 'dark' ? sunIcon : moonIcon;
+        }
+        browserAPI.storage.local.get(['theme'], (result) => {
+            const theme = result.theme || 'dark';
+            document.body.setAttribute('data-theme', theme);
+            setThemeIcon(theme);
+            themeSwitch.onclick = () => {
+                const newTheme = document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+                document.body.setAttribute('data-theme', newTheme);
+                browserAPI.storage.local.set({ theme: newTheme }, () => {
+                    setThemeIcon(newTheme);
+                });
+            };
+        });
+    }
+
+    const input = sidebar.querySelector(`.${CONFIG.CLASS_NAMES.TOPIC_INPUT}`);
+    const button = sidebar.querySelector(`.${CONFIG.CLASS_NAMES.ADD_TOPIC_BUTTON}`);
+    if (input && button) {
+        const saveTopic = () => {
+            const name = input.value.trim();
+            if (!name) return;
+            const conversationId = getConversationIdFromUrl();
+            if (!conversationId) return;
+            StorageUtils.getTopicsByConversation((allTopics) => {
+                const topics = allTopics[conversationId] || [];
+                const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+                topics.push({ id, name });
+                StorageUtils.setTopicsByConversation(conversationId, topics, () => {
+                    input.value = '';
+                    renderTopicList();
+                    renderUserMessageBookmarks();
+                    console.log(`Topic "${name}" saved for conversation ${conversationId}`);
+                });
+            });
+        };
+        button.addEventListener('click', saveTopic);
+        input.addEventListener('blur', saveTopic);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') saveTopic();
+        });
+    }
 }
 
-// --- Debounced Sidebar Update ---
-let updateTimeout = null;
+function ensureSidebar() {
+    let sidebar = document.querySelector(`.${CONFIG.CLASS_NAMES.SIDEBAR}`);
+    if (!sidebar) {
+        sidebar = document.createElement('div');
+        sidebar.className = `${CONFIG.CLASS_NAMES.SIDEBAR} ${CONFIG.CLASS_NAMES.BALL}`;
+        sidebar.innerHTML = `
+            <div class="${CONFIG.CLASS_NAMES.BALL_ICON}">💬</div>
+            <div class="${CONFIG.CLASS_NAMES.SIDEBAR_CONTENT}">
+                <div class="${CONFIG.CLASS_NAMES.CHAT_TITLE_SECTION}">
+                    <span id="ai-chat-topic-title"></span>
+                    <span id="ai-chat-title-edit"><input id="ai-chat-title-input" type="text" /></span>
+                      <span class="edit-icon" title="Edit title">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-edit"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                    </span>
+                    <div class="${CONFIG.CLASS_NAMES.THEME_TOGGLE}">
+                        <span id="theme-switch"></span>
+                    </div>
+                    <span class="close-icon" title="Minimize">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-minimize"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path></svg>
+                    </span>
+                </div>
+                <hr class="sidebar-divider">
+                <div class="topic-input-div">
+                    <input class="${CONFIG.CLASS_NAMES.TOPIC_INPUT}" type="text" placeholder="Add new topic..." />
+                    <button class="${CONFIG.CLASS_NAMES.ADD_TOPIC_BUTTON}">Add</button>
+                </div>
+                <div class="topic-list"></div>
+            </div>
+        `;
+        document.body.appendChild(sidebar);
+
+        const editIcon = sidebar.querySelector('.edit-icon');
+        if (editIcon) {
+            editIcon.addEventListener('click', showTitleEditInput);
+        }
+
+        setupSidebarEventListeners(sidebar);
+
+        StorageUtils.getSettings((settings) => {
+            const position = CONFIG.DEFAULT_SIDEBAR_POSITION;
+            if (settings.topicPosition === 'left') {
+                position.left = '4rem';
+                position.right = 'auto';
+            } else {
+                position.right = '4rem';
+                position.left = 'auto';
+            }
+            browserAPI.storage.local.get(['sidebarState', 'sidebarPosition'], (result) => {
+                if (result.sidebarState === 'expanded') {
+                    sidebar.className = CONFIG.CLASS_NAMES.SIDEBAR;
+                }
+                const savedPosition = result.sidebarPosition || position;
+                sidebar.style.top = savedPosition.top || position.top;
+                sidebar.style.left = savedPosition.left || position.left;
+                sidebar.style.right = savedPosition.right || position.right;
+            });
+        });
+
+        makeDraggable(sidebar);
+    }
+    return sidebar;
+}
+
+// Draggable Functionality
+function makeDraggable(element) {
+    let isDragging = false;
+    let currentX;
+    let currentY;
+    let initialX;
+    let initialY;
+    let savePositionTimeout;
+
+    element.addEventListener('mousedown', startDragging);
+    document.addEventListener('mousemove', drag);
+    document.addEventListener('mouseup', stopDragging);
+    element.addEventListener('touchstart', startDragging);
+    document.addEventListener('touchmove', drag);
+    document.addEventListener('touchend', stopDragging);
+
+    function startDragging(e) {
+        if (e.target.closest('.topic-input, .add-topic-button, .edit-icon, .topic-bookmark, .topic-select, #ai-chat-title-input, .delete-topic, #theme-switch, .close-icon')) return;
+        e.preventDefault();
+        const rect = element.getBoundingClientRect();
+        if (e.type === 'mousedown') {
+            initialX = e.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - rect.width));
+            initialY = e.clientY - (parseFloat(element.style.top) || 32);
+        } else {
+            const touch = e.touches[0];
+            initialX = touch.clientX - (parseFloat(element.style.left) || (window.innerWidth - parseFloat(element.style.right) - rect.width));
+            initialY = touch.clientY - (parseFloat(element.style.top) || 32);
+        }
+        isDragging = true;
+        element.style.cursor = 'grabbing';
+    }
+
+    function drag(e) {
+        if (!isDragging) return;
+        e.preventDefault();
+        const rect = element.getBoundingClientRect();
+        if (e.type === 'mousemove') {
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+        } else {
+            const touch = e.touches[0];
+            currentX = touch.clientX - initialX;
+            currentY = touch.clientY - initialY;
+        }
+        const maxX = window.innerWidth - rect.width;
+        const maxY = window.innerHeight - rect.height;
+        currentX = Math.max(0, Math.min(currentX, maxX));
+        currentY = Math.max(0, Math.min(currentY, maxY));
+
+        if (currentX <= window.innerWidth / 2) {
+            element.style.left = currentX + 'px';
+            element.style.right = 'auto';
+        } else {
+            element.style.right = (window.innerWidth - (currentX + rect.width)) + 'px';
+            element.style.left = 'auto';
+        }
+        element.style.top = currentY + 'px';
+
+        clearTimeout(savePositionTimeout);
+        savePositionTimeout = setTimeout(() => {
+            browserAPI.storage.local.set({ sidebarPosition: { top: element.style.top, left: element.style.left, right: element.style.right } }, () => {
+                console.log('Sidebar position updated');
+            });
+        }, CONFIG.DRAG_DEBOUNCE_MS);
+    }
+
+    function stopDragging() {
+        isDragging = false;
+        element.style.cursor = 'grab';
+    }
+}
+
+// SPA URL Change Detection
+function observeUrlChanges() {
+    let lastUrl = window.location.href;
+    let lastConversationId = getConversationIdFromUrl();
+
+    const originalPushState = history.pushState;
+    history.pushState = function (...args) {
+        originalPushState.apply(this, args);
+        checkUrlChange();
+    };
+
+    const originalReplaceState = history.replaceState;
+    history.replaceState = function (...args) {
+        originalReplaceState.apply(this, args);
+        checkUrlChange();
+    };
+
+    window.addEventListener('popstate', checkUrlChange);
+
+    function checkUrlChange() {
+        if (window.location.href !== lastUrl) {
+            lastUrl = window.location.href;
+            const newConversationId = getConversationIdFromUrl();
+            
+            // Only update if the conversation ID has actually changed
+            if (newConversationId && newConversationId !== lastConversationId) {
+                console.log('[Topic Manager] Chat changed:', newConversationId);
+                lastConversationId = newConversationId;
+                currentConversationId = newConversationId;
+                
+                // Update the sidebar and title
+                updateSidebarTitle();
+                updateSidebar();
+                updateCurrentChat();
+            }
+        }
+    }
+}
+
+// Debounced Sidebar Update
 function debouncedUpdateSidebar() {
     clearTimeout(updateTimeout);
     updateTimeout = setTimeout(() => {
-        extractMessagesFromDOM(); // Ensure messages are updated
+        extractMessagesFromDOM();
         updateSidebar();
-    }, 500); // Wait for DOM to settle
+    }, CONFIG.UPDATE_SIDEBAR_DEBOUNCE_MS);
 }
 
-// --- Topic Management ---
-function getTopicsForConversation(conversationId, callback) {
-    browser.storage.local.get(['topicsByConversation'], (result) => {
-        const allTopics = result.topicsByConversation || {};
-        callback(allTopics[conversationId] || []);
-    });
-}
-
-function setTopicsForConversation(conversationId, topics, callback) {
-    browser.storage.local.get(['topicsByConversation'], (result) => {
-        const allTopics = result.topicsByConversation || {};
-        allTopics[conversationId] = topics;
-        browser.storage.local.set({ topicsByConversation: allTopics }, callback || (() => {
-            console.log(`Topics updated for conversation ${conversationId}`);
-        }));
-    });
-}
-
+// Topic Management
 function deleteTopic(conversationId, topicId, callback) {
-    getTopicsForConversation(conversationId, (topics) => {
+    StorageUtils.getTopicsByConversation((allTopics) => {
+        const topics = allTopics[conversationId] || [];
         const updatedTopics = topics.filter(t => t.id !== topicId);
-        // Remove topicId from bookmarks
-        browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
-            const allBookmarks = result.messageBookmarksByConversation || {};
+        StorageUtils.getBookmarksByConversation((allBookmarks) => {
             const bookmarks = allBookmarks[conversationId] || {};
             Object.keys(bookmarks).forEach(msgId => {
                 if (bookmarks[msgId].topicId === topicId) {
                     delete bookmarks[msgId].topicId;
                 }
             });
-            allBookmarks[conversationId] = bookmarks;
-            browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
-                setTopicsForConversation(conversationId, updatedTopics, callback || (() => {
-                    console.log(`Topic ${topicId} deleted from conversation ${conversationId}`);
-                }));
+            StorageUtils.setBookmarksByConversation(conversationId, bookmarks, () => {
+                StorageUtils.setTopicsByConversation(conversationId, updatedTopics, callback);
             });
         });
     });
@@ -461,20 +597,16 @@ function renderTopicList() {
     const sidebar = ensureSidebar();
     const topicListDiv = sidebar.querySelector('.topic-list');
     if (!topicListDiv) return;
-    getTopicsForConversation(conversationId, (topics) => {
-        browser.storage.local.get(['currentTopicByConversation'], (result) => {
-            const currentTopicByConversation = result.currentTopicByConversation || {};
-            const currentTopicId = currentTopicByConversation[conversationId] || null;
-            topicListDiv.innerHTML = '';
-            
-            // Create a "No Topic" section for unassigned bookmarks
-            const noTopicBookmarks = [];
-            const topicBookmarks = {};
 
-            // Organize bookmarks by topic
-            browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
-                const allBookmarks = result.messageBookmarksByConversation || {};
+    StorageUtils.getTopicsByConversation((allTopics) => {
+        const topics = allTopics[conversationId] || [];
+        StorageUtils.getCurrentTopicByConversation((currentTopicByConversation) => {
+            const currentTopicId = currentTopicByConversation[conversationId] || null;
+            StorageUtils.getBookmarksByConversation((allBookmarks) => {
                 const bookmarks = allBookmarks[conversationId] || {};
+                const noTopicBookmarks = [];
+                const topicBookmarks = {};
+
                 Object.entries(bookmarks).forEach(([msgId, bm]) => {
                     if (!bm.topicId) {
                         noTopicBookmarks.push({ msgId, ...bm });
@@ -484,68 +616,62 @@ function renderTopicList() {
                     }
                 });
 
-                // Render "No Topic" section if there are unassigned bookmarks
+                let html = '';
                 if (noTopicBookmarks.length) {
-                    const noTopicDiv = document.createElement('div');
-                    noTopicDiv.className = 'topic-item no-topic' + (currentTopicId === null ? ' current' : '');
-                    noTopicDiv.textContent = 'Unassigned';
-                    noTopicDiv.onclick = () => setCurrentTopic(null);
-                    topicListDiv.appendChild(noTopicDiv);
-
+                    html += `
+                        <div class="topic-item no-topic${currentTopicId === null ? ' current' : ''}" data-topic-id="none">
+                            Unassigned
+                        </div>
+                    `;
                     noTopicBookmarks.forEach(bm => {
-                        const bmDiv = document.createElement('div');
-                        bmDiv.className = 'bookmark-list-item';
-                        bmDiv.textContent = bm.name;
-                        bmDiv.onclick = () => {
-                            const msgNode = document.querySelector(`[data-message-id="${bm.msgId}"]`);
-                            if (msgNode) msgNode.scrollIntoView({ behavior: 'smooth' });
-                        };
-                        topicListDiv.appendChild(bmDiv);
+                        html += `
+                            <div class="bookmark-list-item" data-msg-id="${bm.msgId}">
+                                ${bm.name}
+                            </div>
+                        `;
                     });
                 }
 
-                // Render each topic and its bookmarks
                 topics.forEach(topic => {
-                    const topicWrapper = document.createElement('div');
-                    topicWrapper.className = 'topic-wrapper';
+                    html += `
+                        <div class="topic-wrapper">
+                            <div class="topic-item${topic.id === currentTopicId ? ' current' : ''}" data-topic-id="${topic.id}">
+                                <span title="${topic.name}">${topic.name}</span>
+                                <span class="delete-topic" title="Delete topic"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-trash-2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></span>
+                            </div>
+                            ${(topicBookmarks[topic.id] || []).map(bm => `
+                                <div class="bookmark-list-item" data-msg-id="${bm.msgId}">
+                                    ${bm.name}
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                });
 
-                    const topicDiv = document.createElement('div');
-                    topicDiv.className = 'topic-item' + (topic.id === currentTopicId ? ' current' : '');
-                    const topicName = document.createElement('span');
-                    topicName.textContent = topic.name;
-                    topicName.title = topic.name;
-                    topicDiv.appendChild(topicName);
+                topicListDiv.innerHTML = html;
 
-                    const deleteBtn = document.createElement('span');
-                    deleteBtn.className = 'delete-topic';
-                    deleteBtn.textContent = '🗑️';
-                    deleteBtn.title = 'Delete topic';
-                    deleteBtn.onclick = (e) => {
+                topicListDiv.addEventListener('click', (e) => {
+                    const topicItem = e.target.closest('.topic-item');
+                    const deleteBtn = e.target.closest('.delete-topic');
+                    const bookmarkItem = e.target.closest('.bookmark-list-item');
+
+                    if (deleteBtn) {
                         e.stopPropagation();
-                        deleteTopic(conversationId, topic.id, () => {
-                            renderTopicList();
-                            renderUserMessageBookmarks();
-                        });
-                    };
-                    topicDiv.appendChild(deleteBtn);
-
-                    topicDiv.onclick = () => setCurrentTopic(topic.id);
-                    topicWrapper.appendChild(topicDiv);
-
-                    // Render bookmarks for this topic
-                    const bookmarksForTopic = topicBookmarks[topic.id] || [];
-                    bookmarksForTopic.forEach(bm => {
-                        const bmDiv = document.createElement('div');
-                        bmDiv.className = 'bookmark-list-item';
-                        bmDiv.textContent = bm.name;
-                        bmDiv.onclick = () => {
-                            const msgNode = document.querySelector(`[data-message-id="${bm.msgId}"]`);
-                            if (msgNode) msgNode.scrollIntoView({ behavior: 'smooth' });
-                        };
-                        topicWrapper.appendChild(bmDiv);
-                    });
-
-                    topicListDiv.appendChild(topicWrapper);
+                        const topicId = topicItem?.dataset.topicId;
+                        if (topicId && topicId !== 'none') {
+                            deleteTopic(conversationId, topicId, () => {
+                                renderTopicList();
+                                renderUserMessageBookmarks();
+                            });
+                        }
+                    } else if (topicItem) {
+                        const topicId = topicItem.dataset.topicId === 'none' ? null : topicItem.dataset.topicId;
+                        setCurrentTopic(topicId);
+                    } else if (bookmarkItem) {
+                        const msgId = bookmarkItem.dataset.msgId;
+                        const msgNode = document.querySelector(`[data-message-id="${msgId}"]`);
+                        if (msgNode) msgNode.scrollIntoView({ behavior: 'smooth' });
+                    }
                 });
             });
         });
@@ -555,32 +681,27 @@ function renderTopicList() {
 function setCurrentTopic(topicId) {
     const conversationId = getConversationIdFromUrl();
     if (!conversationId) return;
-    browser.storage.local.get(['currentTopicByConversation'], (result) => {
-        const currentTopicByConversation = result.currentTopicByConversation || {};
-        currentTopicByConversation[conversationId] = topicId;
-        browser.storage.local.set({ currentTopicByConversation }, () => {
-            renderTopicList();
-            console.log(`Current topic set to ${topicId} for conversation ${conversationId}`);
-        });
+    StorageUtils.setCurrentTopicByConversation(conversationId, topicId, () => {
+        renderTopicList();
     });
 }
 
-// --- Bookmark Management ---
+// Bookmark Management
 function renderUserMessageBookmarks() {
     document.querySelectorAll('.bookmark-bar').forEach(bar => bar.remove());
     const conversationId = getConversationIdFromUrl();
     if (!conversationId) return;
     let retries = 0;
-    const maxRetries = 3;
+    const maxRetries = CONFIG.RETRY_LIMIT;
     function tryRender() {
-        getTopicsForConversation(conversationId, (topics) => {
-            browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
-                const allBookmarks = result.messageBookmarksByConversation || {};
+        StorageUtils.getTopicsByConversation((allTopics) => {
+            const topics = allTopics[conversationId] || [];
+            StorageUtils.getBookmarksByConversation((allBookmarks) => {
                 const bookmarks = allBookmarks[conversationId] || {};
                 const messageNodes = document.querySelectorAll('[data-message-id][data-message-author-role="user"]');
                 if (!messageNodes.length && retries < maxRetries) {
                     retries++;
-                    setTimeout(tryRender, 500);
+                    setTimeout(tryRender, CONFIG.RETRY_DELAY_MS);
                     return;
                 }
                 messageNodes.forEach(msgNode => {
@@ -592,7 +713,7 @@ function renderUserMessageBookmarks() {
                     if (bookmarks[messageId]) {
                         const icon = document.createElement('span');
                         icon.className = 'topic-bookmark assigned';
-                        icon.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path><line x1="12" y1="7" x2="12" y2="13"></line></svg>`;
+                        icon.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-bookmark"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path></svg>`;
                         icon.title = 'Edit bookmark';
                         bar.appendChild(icon);
                         const label = document.createElement('span');
@@ -607,13 +728,11 @@ function renderUserMessageBookmarks() {
                         icon.onclick = () => showBookmarkInput(bar, messageId, bookmarks[messageId].name, topics, bookmarks[messageId].topicId);
                         topicSelect.onchange = () => {
                             const topicId = topicSelect.value;
-                            browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
-                                const allBookmarks = result.messageBookmarksByConversation || {};
+                            StorageUtils.getBookmarksByConversation((allBookmarks) => {
                                 if (!allBookmarks[conversationId]) allBookmarks[conversationId] = {};
                                 allBookmarks[conversationId][messageId].topicId = topicId || undefined;
-                                browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
+                                StorageUtils.setBookmarksByConversation(conversationId, allBookmarks[conversationId], () => {
                                     renderTopicList();
-                                    console.log(`Bookmark ${messageId} updated for conversation ${conversationId}`);
                                 });
                             });
                         };
@@ -651,18 +770,16 @@ function showBookmarkInput(bar, messageId, currentName, topics, currentTopicId) 
         const topicId = topicSelect.value;
         const conversationId = getConversationIdFromUrl();
         if (!conversationId) return;
-        browser.storage.local.get(['messageBookmarksByConversation'], (result) => {
-            const allBookmarks = result.messageBookmarksByConversation || {};
+        StorageUtils.getBookmarksByConversation((allBookmarks) => {
             if (!allBookmarks[conversationId]) allBookmarks[conversationId] = {};
             if (name) {
                 allBookmarks[conversationId][messageId] = { name, topicId: topicId || undefined };
             } else {
                 delete allBookmarks[conversationId][messageId];
             }
-            browser.storage.local.set({ messageBookmarksByConversation: allBookmarks }, () => {
+            StorageUtils.setBookmarksByConversation(conversationId, allBookmarks[conversationId], () => {
                 renderUserMessageBookmarks();
                 renderTopicList();
-                console.log(`Bookmark ${messageId} saved for conversation ${conversationId}`);
             });
         });
     }
@@ -673,14 +790,13 @@ function showBookmarkInput(bar, messageId, currentName, topics, currentTopicId) 
     input.onblur = save;
 }
 
-// --- Custom Title List ---
+// Custom Title List
 function renderCustomTitleList() {
     const sidebar = ensureSidebar();
     const customTitleListDiv = sidebar.querySelector('.custom-title-list');
     if (!customTitleListDiv) return;
     const currentId = getConversationIdFromUrl();
-    browser.storage.local.get(['customChatTitles'], (result) => {
-        const titles = result.customChatTitles || {};
+    StorageUtils.getCustomChatTitles((titles) => {
         customTitleListDiv.innerHTML = '';
         Object.entries(titles).forEach(([convId, title]) => {
             const item = document.createElement('div');
@@ -689,7 +805,15 @@ function renderCustomTitleList() {
             item.title = title;
             item.onclick = () => {
                 if (convId !== currentId) {
+                    // Navigate to the new conversation
                     window.location.href = `/c/${convId}`;
+                    // Update currentConversationId immediately
+                    currentConversationId = convId;
+                    // Force update sidebar title and other components
+                    setTimeout(() => {
+                        updateCurrentChat();
+                        updateSidebar();
+                    }, 100); // Small delay to ensure navigation completes
                 }
             };
             customTitleListDiv.appendChild(item);
@@ -698,31 +822,169 @@ function renderCustomTitleList() {
     });
 }
 
-// --- Update Sidebar ---
-function updateSidebar() {
+// Update Sidebar
+function updateSidebar(retries = 0) {
+    ensureSidebar();
     updateSidebarTitle();
-    renderCustomTitleList();
     renderTopicList();
-    renderUserMessageBookmarks();
+    // Try to render bookmarks, retry if messages are not yet available
+    const conversationId = getConversationIdFromUrl();
+    const messageNodes = document.querySelectorAll('[data-message-id][data-message-author-role="user"]');
+    if (conversationId && messageNodes.length === 0 && retries < 5) {
+        setTimeout(() => updateSidebar(retries + 1), 500);
+    } else {
+        renderUserMessageBookmarks();
+    }
 }
 
-// --- Initialize Extension ---
+// Handle Messages
+browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "GET_CURRENT_CHAT_TITLE") {
+        const conversationId = getConversationIdFromUrl();
+        if (!conversationId) {
+            sendResponse({ title: 'No chat selected' });
+            return;
+        }
+        StorageUtils.getCustomChatTitles((titles) => {
+            const title = titles[conversationId] || getChatTitleFromDOM();
+            sendResponse({ title });
+        });
+        return true;
+    }
+    if (message.type === 'settings-updated') {
+        StorageUtils.getSettings((settings) => {
+            const sidebar = ensureSidebar();
+            const position = CONFIG.DEFAULT_SIDEBAR_POSITION;
+            if (settings.topicPosition === 'left') {
+                sidebar.style.left = '4rem';
+                sidebar.style.right = 'auto';
+            } else {
+                sidebar.style.right = '4rem';
+                sidebar.style.left = 'auto';
+            }
+            browserAPI.storage.local.set({ sidebarPosition: { top: sidebar.style.top, left: sidebar.style.left, right: sidebar.style.right } });
+        });
+    }
+});
+
+// Add title observer
+function observeTitleChanges() {
+    const titleObserver = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            if (mutation.type === 'childList' || mutation.type === 'characterData') {
+                updateSidebarTitle();
+            }
+        });
+    });
+
+    // Observe all potential title elements
+    CONFIG.SELECTORS.TITLE.forEach(selector => {
+        const element = document.querySelector(selector);
+        if (element) {
+            titleObserver.observe(element, { 
+                childList: true, 
+                characterData: true, 
+                subtree: true 
+            });
+        }
+    });
+
+    // Also observe the first user message for title changes
+    const firstUserMessage = document.querySelector('[data-message-author-role="user"]');
+    if (firstUserMessage) {
+        titleObserver.observe(firstUserMessage, { 
+            childList: true, 
+            characterData: true, 
+            subtree: true 
+        });
+    }
+}
+
+// Add click observer for ChatGPT sidebar
+function observeChatGPTSidebar() {
+    const chatHistory = document.querySelector('[aria-label="Chat history"]');
+    if (!chatHistory) {
+        console.debug('[Topic Manager] Chat history not found, will retry');
+        setTimeout(observeChatGPTSidebar, 1000);
+        return;
+    }
+
+    console.debug('[Topic Manager] Setting up click observer for chat history');
+    chatHistory.addEventListener('click', (e) => {
+        const chatItem = e.target.closest('[data-testid="conversation-list"] > div');
+        if (chatItem) {
+            console.debug('[Topic Manager] Chat item clicked, updating title');
+            // Small delay to ensure the URL has updated
+            setTimeout(updateSidebarTitle, 100);
+        }
+    });
+}
+
+function observeSidebarSelection() {
+    let lastConversationId = getConversationIdFromUrl();
+    let sidebarObserver = null;
+    let attached = false;
+
+    function attachSidebarObserver() {
+        const sidebar = document.querySelector('[aria-label="Chat history"] [data-testid="conversation-list"]');
+        if (sidebar && !attached) {
+            attached = true;
+            sidebarObserver = new MutationObserver(() => {
+                const newConversationId = getConversationIdFromUrl();
+                if (newConversationId && newConversationId !== lastConversationId) {
+                    console.log('[Topic Manager] Chat changed:', newConversationId);
+                    lastConversationId = newConversationId;
+                    currentConversationId = newConversationId;
+                    updateSidebarTitle();
+                    updateSidebar();
+                }
+            });
+            sidebarObserver.observe(sidebar, { childList: true, subtree: true, attributes: true });
+        }
+    }
+
+    // Keep trying to attach the observer until successful
+    const intervalId = setInterval(() => {
+        if (!attached) {
+            attachSidebarObserver();
+        } else {
+            clearInterval(intervalId);
+        }
+    }, 500);
+
+    // Also observe the body for sidebar being added (SPA navigation)
+    const bodyObserver = new MutationObserver(() => {
+        if (!attached) {
+            attachSidebarObserver();
+        }
+    });
+    bodyObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+// Initialize Extension
 function init() {
+    console.log('[Topic Manager] Initializing...');
+    updateCurrentChat();
+    observeUrlChanges();
+    observeTitleChanges();
+    observeChatGPTSidebar(); // Add the new observer
+    observeSidebarSelection();
     let retries = 0;
-    const maxRetries = 5;
+    const maxRetries = CONFIG.RETRY_LIMIT;
     function tryInit() {
-        const chatContainer = document.querySelector('main') || document.querySelector('[role="main"]');
+        const chatContainer = CONFIG.SELECTORS.CHAT_CONTAINER
+            .map(selector => document.querySelector(selector))
+            .find(element => element);
         if (chatContainer || retries >= maxRetries) {
             ensureSidebar();
             updateSidebar();
             observeChatContainer();
-            observeUrlChanges();
         } else {
             retries++;
-            setTimeout(tryInit, 1000);
+            setTimeout(tryInit, CONFIG.RETRY_DELAY_MS);
         }
     }
-    setTimeout(tryInit, 1000);
+    setTimeout(tryInit, CONFIG.RETRY_DELAY_MS);
 }
 
-window.addEventListener('load', init);
+init();
