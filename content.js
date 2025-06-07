@@ -412,7 +412,7 @@ function ensureSidebar() {
                 </div>
                 <hr class="sidebar-divider">
                 <div class="topic-input-div">
-                    <input class="${CONFIG.CLASS_NAMES.TOPIC_INPUT}" type="text" placeholder="Add new topic..." />
+                    <input id="ai-topic-input" name="ai-topic-input" class="${CONFIG.CLASS_NAMES.TOPIC_INPUT}" type="text" placeholder="Add new topic..." />
                     <button class="${CONFIG.CLASS_NAMES.ADD_TOPIC_BUTTON}">Add</button>
                 </div>
                 <div class="topic-list"></div>
@@ -830,11 +830,32 @@ function updateSidebar(retries = 0) {
     // Try to render bookmarks, retry if messages are not yet available
     const conversationId = getConversationIdFromUrl();
     const messageNodes = document.querySelectorAll('[data-message-id][data-message-author-role="user"]');
-    if (conversationId && messageNodes.length === 0 && retries < 5) {
-        setTimeout(() => updateSidebar(retries + 1), 500);
+    const MAX_RETRIES = 20; // Increased retry limit
+    if (conversationId && messageNodes.length === 0 && retries < MAX_RETRIES) {
+        setTimeout(() => updateSidebar(retries + 1), 300);
     } else {
         renderUserMessageBookmarks();
     }
+}
+
+// Add a MutationObserver to the chat container to trigger topic/bookmark rendering
+function observeUserMessages() {
+    const chatContainer = CONFIG.SELECTORS.CHAT_CONTAINER
+        .map(selector => document.querySelector(selector))
+        .find(element => element) || document.body;
+    if (!chatContainer) return;
+    let lastConversationId = getConversationIdFromUrl();
+    const observer = new MutationObserver(() => {
+        const currentConversationId = getConversationIdFromUrl();
+        // Only re-render if still in the same conversation
+        if (currentConversationId === lastConversationId) {
+            renderTopicList();
+            renderUserMessageBookmarks();
+        } else {
+            lastConversationId = currentConversationId;
+        }
+    });
+    observer.observe(chatContainer, { childList: true, subtree: true });
 }
 
 // Handle Messages
@@ -961,14 +982,43 @@ function observeSidebarSelection() {
     bodyObserver.observe(document.body, { childList: true, subtree: true });
 }
 
+function requestPersistentStorage() {
+    if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().then(granted => {
+            if (granted) {
+                console.log('[Topic Manager] Persistent storage granted');
+            } else {
+                console.log('[Topic Manager] Persistent storage not granted');
+            }
+        });
+    }
+}
+
+function pollForConversationChange() {
+    let lastConversationId = getConversationIdFromUrl();
+    setInterval(() => {
+        const currentId = getConversationIdFromUrl();
+        if (currentId && currentId !== lastConversationId) {
+            console.log('[Topic Manager] Chat changed (poll):', currentId);
+            lastConversationId = currentId;
+            currentConversationId = currentId;
+            updateSidebarTitle();
+            updateSidebar();
+        }
+    }, 500);
+}
+
 // Initialize Extension
 function init() {
+    requestPersistentStorage();
     console.log('[Topic Manager] Initializing...');
     updateCurrentChat();
     observeUrlChanges();
     observeTitleChanges();
-    observeChatGPTSidebar(); // Add the new observer
+    observeChatGPTSidebar();
     observeSidebarSelection();
+    observeUserMessages();
+    pollForConversationChange();
     let retries = 0;
     const maxRetries = CONFIG.RETRY_LIMIT;
     function tryInit() {

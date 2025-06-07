@@ -311,6 +311,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     max-width: 90%;
+    margin: 0 1rem;
     color: var(--text-color);
     background: var(--bg-secondary);
     backdrop-filter: blur(15px);
@@ -376,22 +377,19 @@
 .topic-select {
     padding: 2px;
     border: 1px solid var(--border-color);
-    border-radius: 50%;
+    border-radius: 4px;
     background: var(--bg-secondary);
     backdrop-filter: blur(15px);
     color: var(--text-color);
     font-size: 12px;
-    transition: border-radius 0.3s ease, width 0.3s ease;
-    width: 24px;
-    overflow: hidden;
+    width: 120px; /* Default width */
+    transition: width 0.3s ease;
     appearance: none;
     box-shadow: inset 0 0 5px var(--highlight-color);
 }
-
 .topic-select:focus,
 .topic-select:hover {
-    border-radius: 4px;
-    width: 120px;
+    width: 150px; /* Slightly larger on interaction */
 }
 
 @keyframes bounce {
