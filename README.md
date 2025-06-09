@@ -55,14 +55,20 @@ For more details, see our [Privacy Policy](privacy.html).
 
 ## Changelog
 
+### v1.1.0
+- Added support for multiple AI chat platforms (ChatGPT, Grok, x.ai)
+- Improved sidebar observer for SPA navigation reliability
+- Enhanced cross-browser compatibility
+- Added persistent storage for better data retention
+- Improved error handling and retry mechanisms
+- Added settings management for auto-topic and sidebar position
+- Enhanced bookmark management system
+- Added statistics tracking for topics and messages
+
 ### v1.0.0
 - Initial release: Sidebar with topic management, custom titles, and bookmarks.
 - Robust chat change detection and title synchronization.
 - Theme toggle and improved UI/UX.
-
-### v1.1.0
-- Improved sidebar observer for SPA navigation reliability.
-- Bug fixes and performance improvements.
 
 ---
 
