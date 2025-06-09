@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background circle -->
+    <circle cx="64" cy="64" r="60" fill="#007bff" opacity="0.1"/>
+    
+    <!-- Chat bubble -->
+    <path d="M40 32h48c4.4 0 8 3.6 8 8v32c0 4.4-3.6 8-8 8H64l-16 16V80H40c-4.4 0-8-3.6-8-8V40c0-4.4 3.6-8 8-8z" 
+          fill="#007bff"/>
+    
+    <!-- Topic tags -->
+    <rect x="48" y="46" width="32" height="4" rx="2" fill="white"/>
+    <rect x="48" y="58" width="24" height="4" rx="2" fill="white"/>
+    <rect x="48" y="70" width="16" height="4" rx="2" fill="white"/>
+    
+    <!-- Plus sign -->
+    <path d="M92 44h8v8h8v8h-8v8h-8v-8h-8v-8h8v-8z" fill="#007bff"/>
+</svg> 
