@@ -6,16 +6,15 @@ if (!browserAPI) {
 
 // Listen for messages from content script or popup
 browserAPI.runtime.onMessage.addListener((message, sender, sendResponse) => {
-if (message.type === 'UPDATE_STATS') {
-    browserAPI.storage.local.get(['topicsByConversation', 'messageBookmarksByConversation'], (result) => {
-        const topicsByConversation = result.topicsByConversation || {};
-        const bookmarksByConversation = result.messageBookmarksByConversation || {};
-        const totalTopics = Object.values(topicsByConversation).reduce((sum, topics) => sum + (Array.isArray(topics) ? topics.length : 0), 0);
-        const totalMessages = Object.values(bookmarksByConversation).reduce((sum, bookmarks) => sum + Object.keys(bookmarks || {}).length, 0);
-        sendResponse({ topics: totalTopics, messages: totalMessages });
-    });
-    return true;
-}
+    if (message.type === 'UPDATE_STATS') {
+        browserAPI.storage.local.get(['topics', 'messages'], (result) => {
+            sendResponse({
+                topics: result.topics ? result.topics.length : 0,
+                messages: result.messages || 0
+            });
+        });
+        return true; // Keep message channel open for async response
+    }
     if (message.type === 'SAVE_SETTINGS') {
         browserAPI.storage.local.set(message.settings, () => {
             browserAPI.tabs.query({ active: true, currentWindow: true }, (tabs) => {
